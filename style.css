@@ -346,12 +346,16 @@ input, select, textarea { font-family: inherit; }
 .fds-loc .lh { background: #f0f0f0; font-weight: 700; text-align: center; }
 .fds-loc a { color: #1155cc; word-break: break-all; }
 
-/* Convocations */
-.fds-conv th { background: #f0f0f0; font-size: 9px; text-transform: uppercase; text-align: center; font-weight: 800; }
-.fds-conv td { text-align: center; font-size: 9.5px; }
-.fds-conv .nm { font-weight: 700; }
-.fds-conv .tel { font-size: 8.5px; }
-.fds-conv .cv { font-weight: 800; color: #c00; }
+/* Convocations — tableau en lignes, classé par catégorie */
+.fds-conv-rows { table-layout: fixed; }
+.fds-conv-rows th { background: #f0f0f0; font-size: 9px; text-transform: uppercase; text-align: left; font-weight: 800; }
+.fds-conv-rows td { text-align: left; font-size: 9.5px; word-break: break-word; }
+.fds-conv-rows .nm { font-weight: 700; }
+.fds-conv-rows .cv { font-weight: 800; color: #c00; text-align: center; }
+.fds-conv-rows .conv-cat {
+  background: #404040; color: #fff; font-weight: 800; text-transform: uppercase;
+  font-size: 9px; letter-spacing: .5px; text-align: center;
+}
 
 /* Scènes */
 .fds-scenes td { font-size: 10px; vertical-align: top; }
@@ -373,9 +377,15 @@ input, select, textarea { font-family: inherit; }
   #print-area, #print-area * { visibility: visible; }
   #print-area { display: block; position: absolute; left: 0; top: 0; width: 100%; }
   #print-area .fds-doc {
-    border: 1px solid #000; max-width: 100%; font-size: 9.5px;
+    border: 1px solid #000; max-width: 100%; width: 100%; font-size: 9px;
   }
-  #print-area .fds-doc td, #print-area .fds-doc th { padding: 2px 4px; }
+  #print-area .fds-doc table { table-layout: fixed; width: 100%; }
+  #print-area .fds-doc td, #print-area .fds-doc th {
+    padding: 2px 3px; word-break: break-word; overflow-wrap: anywhere;
+  }
+  /* éviter qu'une ligne de tableau soit coupée entre 2 pages */
+  #print-area .fds-doc tr { page-break-inside: avoid; }
+  #print-area .fds-doc a { word-break: break-all; }
 }
 
 /* Toolbar du picker (tout sélectionner + compteur) */

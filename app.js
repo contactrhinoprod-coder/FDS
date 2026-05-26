@@ -47,6 +47,27 @@ const ROLES = [
   'Ingé son', 'Scripte', 'Régie', 'HMC', 'Comédien·ne', 'Figurant·e', 'Autre',
 ];
 
+// Catégories de convocation (ordre d'affichage sur la FDS)
+const CATEGORIES = ['Production / Réalisation', 'Comédiens', 'HMC', 'Techniciens', 'Autre'];
+// À quelle catégorie appartient chaque poste
+const ROLE_CATEGORY = {
+  'Prod/Réal': 'Production / Réalisation',
+  'Prod/Chef op son': 'Production / Réalisation',
+  'Directrice de production': 'Production / Réalisation',
+  'Régie': 'Production / Réalisation',
+  'Comédien·ne': 'Comédiens',
+  'Figurant·e': 'Comédiens',
+  'MUA': 'HMC',
+  'HMC': 'HMC',
+  'DOP': 'Techniciens', 'Chef élec': 'Techniciens', 'Élec': 'Techniciens',
+  '1er ass. cam': 'Techniciens', '2nd ass. cam': 'Techniciens', 'Cadreur': 'Techniciens',
+  'Machiniste': 'Techniciens', 'Ingé son': 'Techniciens', 'Scripte': 'Techniciens',
+  'Making of vidéo': 'Techniciens', 'Making of photo': 'Techniciens',
+};
+function categoryOf(role) {
+  return ROLE_CATEGORY[role] || 'Autre';
+}
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 function toast(msg) {
@@ -504,20 +525,34 @@ const FdsRender = (() => {
   function convocations(s) {
     const crew = s.crew || [];
     if (!crew.length) return '';
-    // Tableau : une colonne par membre, 3 lignes (poste/nom, tél, convoc).
-    // Découpe en blocs de 6 colonnes pour rester lisible.
-    const chunk = 6;
-    let blocks = '';
-    for (let i = 0; i < crew.length; i += chunk) {
-      const part = crew.slice(i, i + chunk);
-      blocks += `<table class="fds-conv">
-        <tr>${part.map(m => `<th>${esc(m.role || '')}</th>`).join('')}</tr>
-        <tr>${part.map(m => `<td class="nm">${esc(m.name || '')}</td>`).join('')}</tr>
-        <tr>${part.map(m => `<td class="tel">${esc(m.phone || '')}</td>`).join('')}</tr>
-        <tr>${part.map(m => `<td class="cv">${esc(m.call || s.dayStart || '')}</td>`).join('')}</tr>
-      </table>`;
+    // Regroupe par catégorie, dans l'ordre défini.
+    const byCat = {};
+    for (const m of crew) {
+      const cat = categoryOf(m.role);
+      (byCat[cat] = byCat[cat] || []).push(m);
     }
-    return `<div class="fds-sectionbar">Convocations</div>${blocks}`;
+    const head = `<tr>
+      <th style="width:22%">Poste</th>
+      <th style="width:26%">Nom Prénom</th>
+      <th style="width:18%">Téléphone</th>
+      <th style="width:24%">Mail</th>
+      <th style="width:10%">RDV</th>
+    </tr>`;
+    let body = '';
+    for (const cat of CATEGORIES) {
+      const list = byCat[cat];
+      if (!list || !list.length) continue;
+      body += `<tr><td colspan="5" class="conv-cat">${esc(cat)}</td></tr>`;
+      body += list.map(m => `<tr>
+        <td>${esc(m.role || '')}</td>
+        <td class="nm">${esc(m.name || '')}</td>
+        <td>${esc(m.phone || '')}</td>
+        <td style="font-size:8.5px">${esc(m.email || '')}</td>
+        <td class="cv">${esc(m.call || s.dayStart || '')}</td>
+      </tr>`).join('');
+    }
+    return `<div class="fds-sectionbar">Convocations</div>
+    <table class="fds-conv-rows">${head}${body}</table>`;
   }
 
   function scenes(s) {
@@ -895,7 +930,15 @@ function renderEditorForm() {
     <div id="schedule-rows"></div>
     <button class="inline-add" id="add-sched-row">＋ Ajouter un PAT / repas</button>
 
+    <div class="form-section-title">Lieux</div>
+    <div id="loc-tournage" data-loctype="locTournage" data-kind="tournage"></div>
+    <div id="loc-parking" data-loctype="locParking" data-kind="parking"></div>
+    <div id="loc-hopital" data-loctype="locHopital" data-kind="hopital"></div>
+    <div id="loc-police" data-loctype="locPolice" data-kind="police"></div>
+    <div id="loc-prod" data-loctype="locProd" data-kind="prod"></div>
+
     <div class="form-section-title">Éphémérides & météo</div>
+    <p class="muted small">Renseigne d'abord l'adresse du lieu de tournage ci-dessus, puis clique pour remplir automatiquement.</p>
     <button class="inline-add" id="autofill-weather" style="margin-bottom:8px">🌤️ Remplir auto (soleil + météo selon le lieu de tournage et la date)</button>
     <div class="field-row">
       ${field('Lever soleil', 'sunRise', s.sunRise, 'text', '7h28')}
@@ -905,13 +948,6 @@ function renderEditorForm() {
 
     <div class="form-section-title">Note à l'équipe</div>
     ${field('Note', 'note', s.note, 'textarea', '')}
-
-    <div class="form-section-title">Lieux</div>
-    <div id="loc-tournage" data-loctype="locTournage" data-kind="tournage"></div>
-    <div id="loc-parking" data-loctype="locParking" data-kind="parking"></div>
-    <div id="loc-hopital" data-loctype="locHopital" data-kind="hopital"></div>
-    <div id="loc-police" data-loctype="locPolice" data-kind="police"></div>
-    <div id="loc-prod" data-loctype="locProd" data-kind="prod"></div>
 
     <div class="form-section-title">Convocations (équipe)</div>
     <div id="crew-rows"></div>
@@ -1031,7 +1067,7 @@ function renderCrewRows() {
         <label>Poste personnalisé</label>
         <input data-role-input="${i}" value="${custom ? esc(m.role) : ''}" placeholder="Saisir le poste">
       </div>
-      <div class="field"><label>Nom</label><input data-cm="${i}.name" value="${esc(m.name)}"></div>
+      <div class="field"><label>Nom Prénom</label><input data-cm="${i}.name" value="${esc(m.name)}"></div>
       <div class="field-row">
         <div class="field"><label>Téléphone</label><input data-cm="${i}.phone" value="${esc(m.phone)}"></div>
         <div class="field"><label>Convoc.</label><input data-cm="${i}.call" value="${esc(m.call)}" placeholder="8h"></div>
@@ -1337,7 +1373,7 @@ function editCrew(m, onSaved) {
       <label>Poste personnalisé</label>
       <input data-m="roleCustom" value="${custom ? esc(m.role) : ''}" placeholder="Saisir le poste">
     </div>
-    ${field('Nom', 'name', m.name)}
+    ${field('Nom Prénom', 'name', m.name, 'text', 'ex. GANTIÉ Julien')}
     ${field('Téléphone', 'phone', m.phone)}
     ${field('Email', 'email', m.email, 'email')}
     ${field('Restrictions alimentaires', 'diet', m.diet, 'text', 'ex. végétarien, sans gluten, allergie arachides')}
