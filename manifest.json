@@ -1,0 +1,27 @@
+{
+  "name": "FDS — Feuille de Service",
+  "short_name": "FDS",
+  "description": "Créez, gérez et exportez vos feuilles de service de tournage. Carnet d'équipe et de lieux réutilisable, export PDF prêt à imprimer.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14181c",
+  "theme_color": "#14181c",
+  "lang": "fr",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%2314181c'/%3E%3Crect x='44' y='40' width='104' height='120' rx='8' fill='none' stroke='%23e50914' stroke-width='9'/%3E%3Cline x1='62' y1='72' x2='130' y2='72' stroke='%23e50914' stroke-width='9' stroke-linecap='round'/%3E%3Cline x1='62' y1='96' x2='130' y2='96' stroke='%23e50914' stroke-width='9' stroke-linecap='round'/%3E%3Cline x1='62' y1='120' x2='104' y2='120' stroke='%23e50914' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='106' fill='%2314181c'/%3E%3Crect x='118' y='108' width='276' height='320' rx='20' fill='none' stroke='%23e50914' stroke-width='24'/%3E%3Cline x1='166' y1='192' x2='346' y2='192' stroke='%23e50914' stroke-width='24' stroke-linecap='round'/%3E%3Cline x1='166' y1='256' x2='346' y2='256' stroke='%23e50914' stroke-width='24' stroke-linecap='round'/%3E%3Cline x1='166' y1='320' x2='276' y2='320' stroke='%23e50914' stroke-width='24' stroke-linecap='round'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

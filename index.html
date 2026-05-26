@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#14181c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>FDS — Feuille de Service</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./style.css?v=1" />
+</head>
+<body>
+  <!-- ====================== ÉCRAN DE CONNEXION ====================== -->
+  <div id="login-screen" hidden>
+    <div class="login-box">
+      <div class="login-logo">🎬</div>
+      <h1>FDS</h1>
+      <p class="login-sub">Connectez-vous pour synchroniser vos feuilles de service sur tous vos appareils. Sans connexion, l'app fonctionne en local.</p>
+      <button id="login-google-btn" class="login-google">
+        <span class="g-icon">G</span> Se connecter avec Google
+      </button>
+      <button id="login-skip-btn" class="btn-ghost">Continuer sans compte</button>
+      <p id="login-error" class="login-error" hidden></p>
+    </div>
+  </div>
+
+  <!-- ====================== APP SHELL ====================== -->
+  <div id="app">
+
+    <!-- Barre du haut, contextuelle par vue -->
+    <header id="topbar">
+      <button class="icon-btn" id="back-btn" hidden aria-label="Retour">&#8592;</button>
+      <h1 id="topbar-title">Feuilles de service</h1>
+      <button class="icon-btn" id="search-toggle" aria-label="Rechercher">&#9906;</button>
+    </header>
+
+    <!-- Barre de recherche escamotable -->
+    <div id="searchbar" hidden>
+      <input type="search" id="search-input" placeholder="Projet, date, lieu…" autocomplete="off" />
+    </div>
+
+    <!-- Conteneur des vues. Une seule .view est visible à la fois -->
+    <main id="views">
+
+      <!-- ---------- VUE : Mes feuilles ---------- -->
+      <section class="view" data-view="sheets">
+        <div class="toolbar">
+          <select id="sort-select" class="select">
+            <option value="date_desc">Tri : Date récente</option>
+            <option value="date">Tri : Date ancienne</option>
+            <option value="title">Tri : Projet A→Z</option>
+            <option value="added_desc">Tri : Création récente</option>
+          </select>
+        </div>
+        <div id="sheets-list" class="cards"></div>
+        <div id="sheets-empty" class="empty-state" hidden>
+          <div class="empty-icon">🎬</div>
+          <p>Aucune feuille de service.</p>
+          <button class="btn-primary" data-action="add">Créer une feuille</button>
+        </div>
+      </section>
+
+      <!-- ---------- VUE : Carnet (équipe + lieux réutilisables) ---------- -->
+      <section class="view" data-view="carnet" hidden>
+        <div class="seg carnet-seg" id="carnet-seg">
+          <button data-tab="crew" class="active">Équipe</button>
+          <button data-tab="locations">Lieux</button>
+        </div>
+        <div id="carnet-crew" class="carnet-pane">
+          <button class="btn-primary block" id="add-crew-btn">＋ Ajouter un membre</button>
+          <div id="crew-list" class="cards"></div>
+          <div id="crew-empty" class="empty-state small" hidden>
+            <p class="muted">Votre carnet d'équipe est vide. Enregistrez vos collaborateurs récurrents (nom, poste, téléphone) pour les réutiliser en un clic sur chaque feuille.</p>
+          </div>
+        </div>
+        <div id="carnet-locations" class="carnet-pane" hidden>
+          <button class="btn-primary block" id="add-loc-btn">＋ Ajouter un lieu</button>
+          <div id="loc-list" class="cards"></div>
+          <div id="loc-empty" class="empty-state small" hidden>
+            <p class="muted">Aucun lieu enregistré. Ajoutez vos lieux récurrents (hôpital, police, prod, parkings types) pour les réutiliser.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- VUE : Aperçu d'une feuille ---------- -->
+      <section class="view" data-view="preview" hidden>
+        <div id="preview-actions" class="preview-actions">
+          <button class="btn-ghost" id="preview-edit">Modifier</button>
+          <button class="btn-primary" id="preview-pdf">Exporter PDF</button>
+          <button class="btn-ghost" id="preview-dup">Dupliquer</button>
+        </div>
+        <div id="preview-content"><!-- la feuille rendue est injectée ici --></div>
+      </section>
+
+      <!-- ---------- VUE : Profil / réglages ---------- -->
+      <section class="view" data-view="profile" hidden>
+        <div class="profile-wrap">
+          <div class="profile-card">
+            <div class="avatar" id="profile-avatar">?</div>
+            <div>
+              <div id="profile-name" class="profile-name">Invité</div>
+              <div id="profile-meta" class="profile-meta">0 feuille</div>
+            </div>
+          </div>
+
+          <div id="profile-stats" class="profile-stats"></div>
+
+          <h4 class="settings-head">Identité production</h4>
+          <p class="muted small">Pré-remplie sur chaque nouvelle feuille. Modifiable par feuille.</p>
+          <div class="settings-list">
+            <button class="settings-row" id="set-prod">Maison(s) de production…</button>
+            <button class="settings-row" id="set-logo-left">Logo gauche…</button>
+            <button class="settings-row" id="set-logo-right">Logo droit…</button>
+          </div>
+
+          <h4 class="settings-head">Données</h4>
+          <div class="settings-list">
+            <button class="settings-row" id="set-export">Exporter mes données (JSON)</button>
+            <button class="settings-row" id="set-import">Importer des données (JSON)</button>
+            <button class="settings-row" id="set-theme">Thème : Sombre</button>
+            <button class="settings-row" id="set-cloud">Sync cloud (Firebase)</button>
+            <button class="settings-row danger" id="set-wipe">Tout effacer</button>
+          </div>
+          <p class="muted small">FDS — données stockées localement sur cet appareil.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Barre de navigation du bas -->
+    <nav id="tabbar">
+      <button class="tab active" data-go="sheets"><span>▦</span>Feuilles</button>
+      <button class="tab" data-go="carnet"><span>☷</span>Carnet</button>
+      <button class="tab" id="add-tab"><span class="add-plus">＋</span></button>
+      <button class="tab" data-go="profile"><span>☰</span>Profil</button>
+    </nav>
+
+  </div>
+
+  <!-- ====================== MODALE ÉDITEUR DE FEUILLE ====================== -->
+  <div id="edit-backdrop" class="backdrop" hidden></div>
+  <div id="edit-modal" class="modal" hidden>
+    <div class="modal-head">
+      <button class="btn-ghost" id="edit-cancel">Annuler</button>
+      <strong id="edit-title-h">Nouvelle feuille</strong>
+      <button class="btn-link" id="edit-save">OK</button>
+    </div>
+    <div class="modal-body" id="edit-form"><!-- champs injectés --></div>
+  </div>
+
+  <!-- ====================== MODALE GÉNÉRIQUE (membre / lieu) ====================== -->
+  <div id="mini-backdrop" class="backdrop" hidden></div>
+  <div id="mini-modal" class="modal mini" hidden>
+    <div class="modal-head">
+      <button class="btn-ghost" id="mini-cancel">Annuler</button>
+      <strong id="mini-title-h">—</strong>
+      <button class="btn-link" id="mini-save">OK</button>
+    </div>
+    <div class="modal-body" id="mini-form"><!-- champs injectés --></div>
+  </div>
+
+  <!-- ====================== SÉLECTEUR CARNET (injection rapide) ====================== -->
+  <div id="picker-backdrop" class="backdrop" hidden></div>
+  <div id="picker-modal" class="modal" hidden>
+    <div class="modal-head">
+      <button class="btn-ghost" id="picker-cancel">Fermer</button>
+      <strong id="picker-title-h">Choisir dans le carnet</strong>
+      <button class="btn-link" id="picker-done">OK</button>
+    </div>
+    <div class="modal-body" id="picker-list"><!-- liste cochable injectée --></div>
+  </div>
+
+  <!-- ====================== FEUILLE MODALE D'AJOUT ====================== -->
+  <div id="sheet-backdrop" class="backdrop" hidden></div>
+  <div id="add-sheet" class="sheet" hidden>
+    <div class="sheet-handle"></div>
+    <h3>Ajouter</h3>
+    <button class="big-action" id="act-new-sheet"><span>🎬</span> Nouvelle feuille de service</button>
+    <button class="big-action" id="act-new-crew"><span>👤</span> Nouveau membre d'équipe</button>
+    <button class="big-action" id="act-new-loc"><span>📍</span> Nouveau lieu</button>
+    <button class="btn-ghost" id="act-cancel">Annuler</button>
+  </div>
+
+  <!-- Zone d'impression PDF (remplie à la volée, masquée à l'écran) -->
+  <div id="print-area"></div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Firebase SDK (compat) — même pattern qu'ALPHABRAVO / DVDthèque -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="./app.js?v=1"></script>
+</body>
+</html>

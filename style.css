@@ -1,0 +1,367 @@
+/* ============================================================
+   FDS — style.css
+   Thème repris de DVDthèque (variables identiques).
+   Ajouts : cartes feuilles, éditeur, et le RENDU de la feuille
+   de service (.fds-doc) — fidèle à l'écran et à l'impression A4.
+   ============================================================ */
+
+:root {
+  --bg:        #14181c;
+  --bg-2:      #1c2228;
+  --surface:   #232a31;
+  --surface-2: #2c343c;
+  --text:      #eef2f5;
+  --text-dim:  #9aa7b2;
+  --accent:    #e50914;       /* rouge cinéma */
+  --accent-dim:#b00710;
+  --border:    #313a43;
+  --star:      #f5c518;
+  --radius:    14px;
+  --tabbar-h:  64px;
+  --topbar-h:  54px;
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+[data-theme="light"] {
+  --bg:        #f4f6f8;
+  --bg-2:      #ffffff;
+  --surface:   #ffffff;
+  --surface-2: #eef1f4;
+  --text:      #161c22;
+  --text-dim:  #5d6b78;
+  --border:    #dde3e9;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overscroll-behavior-y: none;
+}
+h1, h2, h3, h4 { margin: 0; font-weight: 700; }
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+
+/* ---------------- Login ---------------- */
+#login-screen {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+}
+.login-box { max-width: 360px; text-align: center; }
+.login-logo { font-size: 3.4rem; }
+.login-box h1 { font-size: 2rem; margin: 8px 0; letter-spacing: 2px; }
+.login-sub { color: var(--text-dim); font-size: .95rem; line-height: 1.5; margin-bottom: 22px; }
+.login-google {
+  width: 100%; padding: 13px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 1rem; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 12px;
+}
+.g-icon {
+  width: 22px; height: 22px; border-radius: 50%; background: #fff; color: #4285f4;
+  font-weight: 800; display: inline-flex; align-items: center; justify-content: center;
+}
+.login-error { color: var(--accent); font-size: .85rem; margin-top: 10px; }
+
+/* ---------------- Topbar ---------------- */
+#topbar {
+  position: sticky; top: 0; z-index: 30;
+  height: calc(var(--topbar-h) + var(--safe-top));
+  padding-top: var(--safe-top);
+  display: flex; align-items: center; gap: 8px; padding-left: 8px; padding-right: 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+#topbar-title { font-size: 1.15rem; flex: 1; text-align: center; }
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 10px; font-size: 1.3rem;
+  background: none; border: none; color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:active { background: var(--surface); }
+
+/* ---------------- Searchbar ---------------- */
+#searchbar {
+  position: sticky; z-index: 29;
+  padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border);
+  top: calc(var(--topbar-h) + var(--safe-top));
+}
+#search-input {
+  width: 100%; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: 1rem; outline: none;
+}
+
+/* ---------------- Views ---------------- */
+.view { padding: 12px 12px calc(var(--tabbar-h) + var(--safe-bottom) + 16px); }
+
+/* ---------------- Toolbar ---------------- */
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.seg button {
+  padding: 8px 14px; background: var(--surface); border: none; color: var(--text-dim);
+  font-size: .9rem; font-weight: 600;
+}
+.seg button.active { background: var(--accent); color: #fff; }
+.select {
+  padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: .9rem;
+}
+
+/* ---------------- Cartes (feuilles, équipe, lieux) ---------------- */
+.cards { display: flex; flex-direction: column; gap: 10px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; display: flex; align-items: center; gap: 12px;
+}
+.card:active { background: var(--surface-2); }
+.card-main { flex: 1; min-width: 0; }
+.card-title { font-weight: 700; font-size: 1.02rem; }
+.card-sub { color: var(--text-dim); font-size: .85rem; margin-top: 3px; }
+.card-badge {
+  font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 20px;
+  background: var(--accent); color: #fff; white-space: nowrap;
+}
+.card-badge.muted { background: var(--surface-2); color: var(--text-dim); }
+.card-actions { display: flex; gap: 6px; }
+.card-actions button {
+  width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-2); color: var(--text-dim); font-size: 1rem;
+}
+
+/* ---------------- Empty states ---------------- */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-dim); }
+.empty-state.small { padding: 24px 12px; }
+.empty-icon { font-size: 3rem; margin-bottom: 12px; }
+
+/* ---------------- Boutons ---------------- */
+.btn-primary {
+  background: var(--accent); color: #fff; border: none; border-radius: 10px;
+  padding: 12px 18px; font-size: 1rem; font-weight: 600;
+}
+.btn-primary.block { width: 100%; margin-bottom: 14px; }
+.btn-ghost {
+  background: none; border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 11px 16px; font-size: .95rem; font-weight: 600;
+}
+.btn-link { background: none; border: none; color: var(--accent); font-size: 1rem; font-weight: 700; }
+.muted { color: var(--text-dim); }
+.small { font-size: .82rem; }
+
+/* ---------------- Carnet ---------------- */
+.carnet-seg { width: 100%; margin-bottom: 14px; }
+.carnet-seg button { flex: 1; }
+
+/* ---------------- Tabbar ---------------- */
+#tabbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+  height: calc(var(--tabbar-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  display: flex; background: var(--bg-2); border-top: 1px solid var(--border);
+}
+.tab {
+  flex: 1; background: none; border: none; color: var(--text-dim);
+  font-size: .68rem; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; padding: 6px 0;
+}
+.tab span { font-size: 1.25rem; }
+.tab.active { color: var(--accent); }
+.add-plus {
+  background: var(--accent); color: #fff; width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 1.6rem; margin-top: -8px;
+}
+
+/* ---------------- Profil ---------------- */
+.profile-wrap { display: flex; flex-direction: column; gap: 14px; }
+.profile-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; display: flex; align-items: center; gap: 14px;
+}
+.avatar {
+  width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 700;
+  background-size: cover; background-position: center;
+}
+.profile-name { font-weight: 700; font-size: 1.1rem; }
+.profile-meta { color: var(--text-dim); font-size: .85rem; }
+.profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; text-align: center;
+}
+.stat-num { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+.stat-lbl { font-size: .72rem; color: var(--text-dim); margin-top: 2px; }
+.settings-head { margin: 8px 2px 0; font-size: .95rem; }
+.settings-list {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.settings-row {
+  width: 100%; text-align: left; padding: 14px 16px; background: none; border: none;
+  color: var(--text); font-size: .95rem; border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row:active { background: var(--surface-2); }
+.settings-row.danger { color: var(--accent); }
+
+/* ---------------- Backdrops & modales ---------------- */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 40; }
+.modal {
+  position: fixed; inset: 0; z-index: 41; background: var(--bg);
+  display: flex; flex-direction: column;
+  padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+}
+.modal.mini { top: auto; height: auto; max-height: 88vh; border-radius: 18px 18px 0 0; }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.modal-head strong { font-size: 1rem; }
+.modal-body { flex: 1; overflow-y: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+
+/* ---------------- Champs de formulaire ---------------- */
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: .82rem; color: var(--text-dim); margin-bottom: 5px; font-weight: 600; }
+.field input, .field textarea, .field select {
+  width: 100%; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 1rem; outline: none;
+}
+.field textarea { min-height: 80px; resize: vertical; }
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; }
+.form-section-title {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent);
+  margin: 22px 0 10px; font-weight: 800; border-bottom: 1px solid var(--border); padding-bottom: 6px;
+}
+.inline-add {
+  background: var(--surface-2); border: 1px dashed var(--border); border-radius: 10px;
+  padding: 10px; width: 100%; color: var(--text-dim); font-weight: 600; margin-bottom: 10px;
+}
+.repeat-item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px; margin-bottom: 8px; position: relative;
+}
+.repeat-item .del-row {
+  position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 6px;
+  border: none; background: var(--bg-2); color: var(--accent); font-size: 1rem;
+}
+
+/* picker carnet */
+.pick-row {
+  display: flex; align-items: center; gap: 10px; padding: 12px;
+  border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; background: var(--surface);
+}
+.pick-row input { width: 20px; height: 20px; accent-color: var(--accent); }
+.pick-main { flex: 1; }
+.pick-main b { display: block; }
+
+/* ---------------- Bottom sheet d'ajout ---------------- */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 41;
+  background: var(--bg-2); border-radius: 20px 20px 0 0; padding: 10px 18px 26px;
+  padding-bottom: calc(26px + var(--safe-bottom));
+}
+.sheet-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 6px auto 14px; }
+.sheet h3 { text-align: center; margin-bottom: 14px; }
+.big-action {
+  width: 100%; padding: 15px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 1rem; font-weight: 600;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+}
+.big-action span { font-size: 1.3rem; }
+
+/* ---------------- Toast ---------------- */
+.toast {
+  position: fixed; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px); left: 50%;
+  transform: translateX(-50%); background: var(--surface-2); color: var(--text);
+  padding: 12px 18px; border-radius: 10px; font-size: .9rem; z-index: 60;
+  border: 1px solid var(--border); max-width: 90%; text-align: center;
+}
+
+/* ---------------- Aperçu : actions ---------------- */
+.preview-actions {
+  display: flex; gap: 8px; margin-bottom: 14px; position: sticky;
+  top: calc(var(--topbar-h) + var(--safe-top)); z-index: 5;
+  background: var(--bg); padding: 6px 0;
+}
+.preview-actions .btn-primary, .preview-actions .btn-ghost { flex: 1; padding: 11px 8px; font-size: .9rem; }
+
+/* ============================================================
+   RENDU DE LA FEUILLE DE SERVICE (.fds-doc)
+   Fidèle à la référence H2M/Rhino. À l'écran : fond blanc,
+   texte noir, mise à l'échelle. À l'impression : A4 portrait.
+   ============================================================ */
+.fds-doc {
+  background: #fff; color: #111; width: 100%; max-width: 800px; margin: 0 auto;
+  font-size: 11px; line-height: 1.25; border: 1px solid #000;
+}
+.fds-doc * { box-sizing: border-box; }
+.fds-doc table { width: 100%; border-collapse: collapse; }
+.fds-doc td, .fds-doc th { border: 1px solid #000; padding: 3px 5px; vertical-align: middle; }
+.fds-sectionbar {
+  background: #d9d9d9; text-align: center; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .5px; padding: 3px; border: 1px solid #000; border-top: none; font-size: 11px;
+}
+
+/* En-tête */
+.fds-header td { text-align: center; }
+.fds-logo-cell { width: 18%; padding: 6px; }
+.fds-logo-cell img { max-width: 100%; max-height: 64px; object-fit: contain; }
+.fds-logo-ph {
+  border: 1px dashed #999; color: #999; font-size: 9px; padding: 18px 4px; border-radius: 4px;
+}
+.fds-title-cell { width: 64%; }
+.fds-title-cell .t1 { font-weight: 800; font-size: 14px; }
+.fds-title-cell .t2 { font-weight: 800; font-size: 13px; }
+.fds-title-cell .t3 { font-size: 11px; }
+.fds-title-cell .t4 { background: #404040; color: #fff; font-weight: 700; padding: 2px; margin-top: 3px; }
+
+/* Bandeau horaires / éphémérides */
+.fds-band td { font-size: 10px; }
+.fds-band .lbl { font-weight: 700; background: #f0f0f0; width: 14%; }
+.fds-band .big { font-weight: 800; font-size: 13px; color: var(--print-accent, #c00); text-align: center; }
+.fds-band .eph { font-weight: 800; text-align: center; }
+.fds-band .accent { color: #c00; font-weight: 800; }
+
+/* Note équipe */
+.fds-note { font-style: italic; text-align: center; padding: 6px 10px; font-size: 10px; }
+.fds-note .note-title { font-weight: 800; font-style: normal; text-transform: uppercase; }
+
+/* Lieux */
+.fds-loc td { font-size: 10px; vertical-align: top; }
+.fds-loc .lh { background: #f0f0f0; font-weight: 700; text-align: center; }
+.fds-loc a { color: #1155cc; word-break: break-all; }
+
+/* Convocations */
+.fds-conv th { background: #f0f0f0; font-size: 9px; text-transform: uppercase; text-align: center; font-weight: 800; }
+.fds-conv td { text-align: center; font-size: 9.5px; }
+.fds-conv .nm { font-weight: 700; }
+.fds-conv .tel { font-size: 8.5px; }
+.fds-conv .cv { font-weight: 800; color: #c00; }
+
+/* Scènes */
+.fds-scenes td { font-size: 10px; vertical-align: top; }
+.fds-scenes .syn { font-style: italic; text-align: center; padding: 6px; }
+.fds-scenes .tag { font-weight: 700; text-align: center; }
+.fds-scenes .tot { font-weight: 800; background: #f0f0f0; }
+.fds-scenes .accent { color: #c00; }
+
+/* Pied */
+.fds-foot td { text-align: center; font-weight: 700; }
+.fds-foot .mid { font-style: italic; }
+
+/* ---------------- Impression ---------------- */
+#print-area { display: none; }
+
+@media print {
+  @page { size: A4 portrait; margin: 8mm; }
+  body * { visibility: hidden; }
+  #print-area, #print-area * { visibility: visible; }
+  #print-area { display: block; position: absolute; left: 0; top: 0; width: 100%; }
+  #print-area .fds-doc {
+    border: 1px solid #000; max-width: 100%; font-size: 9.5px;
+  }
+  #print-area .fds-doc td, #print-area .fds-doc th { padding: 2px 4px; }
+}
