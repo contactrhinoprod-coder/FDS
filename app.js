@@ -542,8 +542,14 @@ async function remove(name, id) {
 // --- Router ---
 function go(view, opts = {}) {
   State.view = view;
-  $$('#views .view').forEach(v => v.hidden = (v.dataset.view !== view));
+  // La vue "projects" et la vue "sheets" partagent le même conteneur HTML
+  // (data-view="sheets"). On mappe donc 'projects' -> conteneur 'sheets'.
+  const container = (view === 'projects') ? 'sheets' : view;
+  $$('#views .view').forEach(v => v.hidden = (v.dataset.view !== container));
   $$('#tabbar .tab[data-go]').forEach(t => t.classList.toggle('active', t.dataset.go === view));
+
+  // Dès qu'on navigue dans l'app, l'écran de login n'a plus lieu d'être affiché.
+  const ls = $('#login-screen'); if (ls) ls.hidden = true;
 
   const titles = {
     projects: 'Mes projets', sheets: State._projName || 'Feuilles',
@@ -551,7 +557,7 @@ function go(view, opts = {}) {
   };
   $('#topbar-title').textContent = titles[view] || 'FDS';
   const back = $('#back-btn');
-  back.hidden = !(view === 'sheets' || view === 'preview');
+  if (back) back.hidden = !(view === 'sheets' || view === 'preview');
 
   if (view === 'projects') renderProjects();
   if (view === 'sheets') renderSheets();
