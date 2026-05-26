@@ -570,6 +570,11 @@ function go(view, opts = {}) {
 // --- Vue Projets ---
 function renderProjects() {
   const box = $('#sheets-list'); // réutilise le conteneur de la 1ère vue
+  // Libellés contextuels (vue projets)
+  const topBtn = $('#top-add-btn'); if (topBtn) topBtn.textContent = '＋ Nouveau projet';
+  const et = $('#empty-text'); if (et) et.textContent = 'Aucun projet. Crée ton premier projet pour commencer.';
+  const eb = $('#sheets-empty button[data-action="add"]'); if (eb) eb.textContent = 'Créer un projet';
+
   const list = State.projects.slice().sort((a, b) => (b.created || 0) - (a.created || 0));
   $('#sheets-empty').hidden = list.length > 0;
   if (!list.length) { box.innerHTML = ''; return; }
@@ -581,15 +586,21 @@ function renderProjects() {
         <div class="card-sub">${esc(p.producers || '')}</div>
       </div>
       <span class="card-badge ${n ? '' : 'muted'}">${n} feuille${n > 1 ? 's' : ''}</span>
-      <div class="card-actions"><button data-del-proj="${p.id}">🗑</button></div>
+      <div class="card-actions">
+        <button data-edit-proj="${p.id}">✎</button>
+        <button data-del-proj="${p.id}">🗑</button>
+      </div>
     </div>`;
   }).join('');
   $$('.card[data-pid]', box).forEach(c => {
     c.addEventListener('click', e => {
-      if (e.target.closest('[data-del-proj]')) return;
+      if (e.target.closest('[data-del-proj]') || e.target.closest('[data-edit-proj]')) return;
       openProject(c.dataset.pid);
     });
   });
+  $$('[data-edit-proj]', box).forEach(b => b.addEventListener('click', () => {
+    editProject(byId(State.projects, b.dataset.editProj));
+  }));
   $$('[data-del-proj]', box).forEach(b => b.addEventListener('click', async () => {
     const p = byId(State.projects, b.dataset.delProj);
     if (!confirm(`Supprimer le projet "${p.name}" et ses feuilles ?`)) return;
@@ -612,6 +623,11 @@ function openProject(pid) {
 // --- Vue Feuilles d'un projet ---
 function renderSheets() {
   const box = $('#sheets-list');
+  // Libellés contextuels (vue feuilles d'un projet)
+  const topBtn = $('#top-add-btn'); if (topBtn) topBtn.textContent = '＋ Nouvelle feuille de service';
+  const et = $('#empty-text'); if (et) et.textContent = 'Aucune feuille dans ce projet.';
+  const eb = $('#sheets-empty button[data-action="add"]'); if (eb) eb.textContent = 'Créer une feuille';
+
   const list = sheetsOfProject(State.currentProjectId);
   const sort = $('#sort-select').value;
   if (sort === 'date') list.reverse();
@@ -983,15 +999,28 @@ function renderProfile() {
    8. BOOTSTRAP — câblage événements + démarrage
    ============================================================ */
 
-// Ajout d'un projet (prompt simple)
-async function newProject() {
-  const name = prompt('Nom du projet (ex. PUB Santé Mentale H2M) :');
-  if (!name) return;
-  const producers = prompt('Produit par (ex. H2M et RhinoProd) :', State.settings.prodName) || '';
-  const p = { id: uid(), name: name.trim(), producers: producers.trim(), created: Date.now() };
-  await persist('projects', p); State.projects.push(p);
-  openProject(p.id);
-  toast('Projet créé');
+// Création/édition d'un projet via une vraie fenêtre (champs séparés)
+function newProject() { editProject(null); }
+
+function editProject(p) {
+  const isNew = !p;
+  p = p || { id: uid(), name: '', producers: State.settings.prodName || '', created: Date.now() };
+  openMini(isNew ? 'Nouveau projet' : 'Modifier le projet', `
+    <div class="field"><label>Nom du projet</label>
+      <input data-p="name" value="${esc(p.name)}" placeholder="ex. PUB Santé Mentale H2M"></div>
+    <div class="field"><label>Produit par</label>
+      <input data-p="producers" value="${esc(p.producers)}" placeholder="ex. H2M et RhinoProd"></div>
+  `, async (form) => {
+    const get = k => { const el = $(`[data-p="${k}"]`, form); return el ? el.value.trim() : ''; };
+    const obj = { ...p, name: get('name'), producers: get('producers') };
+    if (!obj.name) { toast('Le nom du projet est requis'); return false; }
+    await persist('projects', obj);
+    const i = State.projects.findIndex(x => x.id === obj.id);
+    if (i >= 0) State.projects[i] = obj; else State.projects.push(obj);
+    if (isNew) { openProject(obj.id); toast('Projet créé'); }
+    else { renderProjects(); toast('Projet modifié'); }
+    return true;
+  });
 }
 
 // Nouvelle feuille dans le projet courant
@@ -1047,7 +1076,19 @@ function bind() {
     if (t.dataset.go === 'sheets') { go('projects'); return; } // l'onglet "Feuilles" montre les projets
     go(t.dataset.go);
   }));
-  $('#add-tab').addEventListener('click', () => { $('#sheet-backdrop').hidden = false; $('#add-sheet').hidden = false; });
+  // Bouton + central : adaptatif.
+  // - sur l'accueil "Mes projets" -> nouveau projet
+  // - dans un projet (vue feuilles) -> nouvelle feuille
+  // - sur le carnet -> menu (membre/lieu)
+  $('#add-tab').addEventListener('click', () => {
+    if (State.view === 'projects') { newProject(); }
+    else if (State.view === 'sheets') { newSheet(); }
+    else { $('#sheet-backdrop').hidden = false; $('#add-sheet').hidden = false; }
+  });
+  // Bouton du haut (dans la vue projets/feuilles) : même logique contextuelle
+  $('#top-add-btn').addEventListener('click', () => {
+    if (State.view === 'projects') newProject(); else newSheet();
+  });
 
   // Back
   $('#back-btn').addEventListener('click', () => {
@@ -1055,7 +1096,7 @@ function bind() {
     else if (State.view === 'sheets') go('projects');
   });
 
-  // Bottom sheet d'ajout
+  // Bottom sheet d'ajout (accessible depuis le + sur d'autres vues)
   const closeAdd = () => { $('#sheet-backdrop').hidden = true; $('#add-sheet').hidden = true; };
   $('#sheet-backdrop').addEventListener('click', closeAdd);
   $('#act-cancel').addEventListener('click', closeAdd);
@@ -1063,9 +1104,11 @@ function bind() {
   $('#act-new-crew').addEventListener('click', () => { closeAdd(); carnetTab = 'crew'; go('carnet'); editCrew(null); });
   $('#act-new-loc').addEventListener('click', () => { closeAdd(); carnetTab = 'locations'; go('carnet'); editLoc(null); });
 
-  // Empty state projets
+  // Empty state : action contextuelle (projet sur l'accueil, feuille dans un projet)
   document.addEventListener('click', e => {
-    if (e.target.dataset.action === 'add') newSheet();
+    if (e.target.dataset.action === 'add') {
+      if (State.view === 'projects') newProject(); else newSheet();
+    }
   });
 
   // Tri
