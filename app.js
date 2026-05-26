@@ -435,6 +435,24 @@ const FdsRender = (() => {
     <table><tr><td class="fds-note">${esc(s.note).replace(/\n/g, '<br>')}</td></tr></table>`;
   }
 
+  // Récap alimentaire ANONYME pour la régie : agrège les restrictions
+  // de l'équipe sans nommer les personnes (ex. "2 végétarien, 1 sans gluten").
+  function dietSummary(s) {
+    const diets = (s.crew || []).map(m => (m.diet || '').trim()).filter(Boolean);
+    if (!diets.length) return '';
+    const counts = {};
+    for (const d of diets) {
+      const key = d.toLowerCase();
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    const parts = Object.entries(counts)
+      .map(([d, n]) => `${n} ${d}`)
+      .sort();
+    return `
+    <div class="fds-sectionbar">Régie — restrictions alimentaires (${diets.length})</div>
+    <table><tr><td class="fds-note" style="font-style:normal">${esc(parts.join(' · '))}</td></tr></table>`;
+  }
+
   function locRow(label, l) {
     if (!l || (!l.name && !l.address)) return '';
     return `
@@ -512,6 +530,7 @@ const FdsRender = (() => {
       ${note(s)}
       ${locations(s)}
       ${convocations(s)}
+      ${dietSummary(s)}
       ${scenes(s)}
       ${footer(s, p)}
     </div>`;
@@ -879,7 +898,7 @@ function applyPicker() {
     const ids = $$('#picker-list input:checked').map(i => i.value);
     for (const id of ids) {
       const m = byId(State.crew, id);
-      if (m) editDraft.crew.push({ id: uid(), role: m.role, name: m.name, phone: m.phone, email: m.email, call: editDraft.dayStart || '', key: false });
+      if (m) editDraft.crew.push({ id: uid(), role: m.role, name: m.name, phone: m.phone, email: m.email, diet: m.diet || '', notes: m.notes || '', call: editDraft.dayStart || '', key: false });
     }
     renderCrewRows();
   } else if (pickerMode === 'loc') {
@@ -907,7 +926,10 @@ function renderCarnet() {
   $('#crew-list').innerHTML = State.crew.map(m => `
     <div class="card" data-cid="${m.id}">
       <div class="card-main"><div class="card-title">${esc(m.name)}</div>
-        <div class="card-sub">${esc(m.role||'')} · ${esc(m.phone||'')}${m.email?' · '+esc(m.email):''}</div></div>
+        <div class="card-sub">${esc(m.role||'')}${m.phone?' · '+esc(m.phone):''}${m.email?' · '+esc(m.email):''}</div>
+        ${m.diet ? `<div class="card-sub">🍽️ ${esc(m.diet)}</div>` : ''}
+        ${m.notes ? `<div class="card-sub">📝 ${esc(m.notes)}</div>` : ''}
+      </div>
       <div class="card-actions"><button data-edit-crew="${m.id}">✎</button><button data-del-crew="${m.id}">🗑</button></div>
     </div>`).join('');
   // lieux
@@ -915,7 +937,9 @@ function renderCarnet() {
   $('#loc-list').innerHTML = State.locations.map(l => `
     <div class="card" data-lid="${l.id}">
       <div class="card-main"><div class="card-title">${esc(l.name)}</div>
-        <div class="card-sub">${esc(l.kind||'')} · ${esc(l.address||'')}</div></div>
+        <div class="card-sub">${esc(l.kind||'')}${l.address?' · '+esc(l.address):''}</div>
+        ${l.mapUrl ? `<div class="card-sub"><a href="${esc(l.mapUrl)}" target="_blank" rel="noopener" style="color:var(--accent)">📍 Ouvrir dans Maps</a></div>` : ''}
+      </div>
       <div class="card-actions"><button data-edit-loc="${l.id}">✎</button><button data-del-loc="${l.id}">🗑</button></div>
     </div>`).join('');
   $$('[data-edit-crew]').forEach(b => b.addEventListener('click', () => editCrew(byId(State.crew, b.dataset.editCrew))));
@@ -940,15 +964,17 @@ function closeMini() { $('#mini-backdrop').hidden = true; $('#mini-modal').hidde
 
 function editCrew(m) {
   const isNew = !m;
-  m = m || { id: uid(), role: '', name: '', phone: '', email: '' };
+  m = m || { id: uid(), role: '', name: '', phone: '', email: '', diet: '', notes: '' };
   openMini(isNew ? 'Nouveau membre' : 'Modifier', `
     <div class="field"><label>Poste</label><select data-m="role"><option value=""></option>${roleOptions(m.role)}</select></div>
     ${field('Nom', 'name', m.name)}
     ${field('Téléphone', 'phone', m.phone)}
     ${field('Email', 'email', m.email, 'email')}
+    ${field('Restrictions alimentaires', 'diet', m.diet, 'text', 'ex. végétarien, sans gluten, allergie arachides')}
+    ${field('Commentaire', 'notes', m.notes, 'textarea', 'Note libre sur ce membre')}
   `.replace(/data-k=/g, 'data-m='), async (form) => {
     const get = k => { const el = $(`[data-m="${k}"]`, form); return el ? el.value : ''; };
-    const obj = { ...m, role: get('role'), name: get('name'), phone: get('phone'), email: get('email') };
+    const obj = { ...m, role: get('role'), name: get('name'), phone: get('phone'), email: get('email'), diet: get('diet'), notes: get('notes') };
     if (!obj.name) { toast('Nom requis'); return false; }
     await persist('crew', obj);
     const i = State.crew.findIndex(x => x.id === obj.id);
@@ -956,6 +982,13 @@ function editCrew(m) {
     renderCarnet(); return true;
   });
 }
+
+// Génère un lien Google Maps de recherche à partir d'une adresse (gratuit, sans clé API).
+function mapUrlFromAddress(addr) {
+  if (!addr || !addr.trim()) return '';
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr.trim());
+}
+
 function editLoc(l) {
   const isNew = !l;
   l = l || { id: uid(), name: '', address: '', mapUrl: '', kind: 'tournage' };
@@ -964,11 +997,16 @@ function editLoc(l) {
     <div class="field"><label>Type</label><select data-m="kind">
       ${kinds.map(k => `<option value="${k}" ${k===l.kind?'selected':''}>${k}</option>`).join('')}</select></div>
     ${field('Nom du lieu', 'name', l.name)}
-    ${field('Adresse', 'address', l.address)}
-    ${field('Lien Google Maps', 'mapUrl', l.mapUrl)}
+    ${field('Adresse', 'address', l.address, 'text', 'ex. Rte de Caussols, 06460 Saint-Vallier-de-Thiey')}
+    <p class="muted small">Le lien Google Maps est généré automatiquement depuis l'adresse. Tu peux aussi coller un lien précis ci-dessous (facultatif).</p>
+    ${field('Lien Google Maps (facultatif)', 'mapUrl', l.mapUrl, 'text', 'vide = généré depuis adresse')}
   `.replace(/data-k=/g, 'data-m='), async (form) => {
     const get = k => { const el = $(`[data-m="${k}"]`, form); return el ? el.value : ''; };
-    const obj = { ...l, kind: get('kind'), name: get('name'), address: get('address'), mapUrl: get('mapUrl') };
+    const address = get('address');
+    let mapUrl = get('mapUrl').trim();
+    // Si pas de lien fourni, on le génère depuis l'adresse
+    if (!mapUrl) mapUrl = mapUrlFromAddress(address);
+    const obj = { ...l, kind: get('kind'), name: get('name'), address, mapUrl };
     if (!obj.name) { toast('Nom requis'); return false; }
     await persist('locations', obj);
     const i = State.locations.findIndex(x => x.id === obj.id);
@@ -1071,21 +1109,13 @@ function openMailMenu() {
 }
 
 function bind() {
-  // Tabbar
+  // Tabbar : Projet / Carnet / Profil
   $$('#tabbar .tab[data-go]').forEach(t => t.addEventListener('click', () => {
-    if (t.dataset.go === 'sheets') { go('projects'); return; } // l'onglet "Feuilles" montre les projets
     go(t.dataset.go);
   }));
-  // Bouton + central : adaptatif.
-  // - sur l'accueil "Mes projets" -> nouveau projet
-  // - dans un projet (vue feuilles) -> nouvelle feuille
-  // - sur le carnet -> menu (membre/lieu)
-  $('#add-tab').addEventListener('click', () => {
-    if (State.view === 'projects') { newProject(); }
-    else if (State.view === 'sheets') { newSheet(); }
-    else { $('#sheet-backdrop').hidden = false; $('#add-sheet').hidden = false; }
-  });
-  // Bouton du haut (dans la vue projets/feuilles) : même logique contextuelle
+  // Bouton d'action principal en haut : contextuel
+  // - vue projets -> nouveau projet
+  // - vue feuilles (dans un projet) -> nouvelle feuille
   $('#top-add-btn').addEventListener('click', () => {
     if (State.view === 'projects') newProject(); else newSheet();
   });
@@ -1094,21 +1124,6 @@ function bind() {
   $('#back-btn').addEventListener('click', () => {
     if (State.view === 'preview') go('sheets');
     else if (State.view === 'sheets') go('projects');
-  });
-
-  // Bottom sheet d'ajout (accessible depuis le + sur d'autres vues)
-  const closeAdd = () => { $('#sheet-backdrop').hidden = true; $('#add-sheet').hidden = true; };
-  $('#sheet-backdrop').addEventListener('click', closeAdd);
-  $('#act-cancel').addEventListener('click', closeAdd);
-  $('#act-new-sheet').addEventListener('click', () => { closeAdd(); newSheet(); });
-  $('#act-new-crew').addEventListener('click', () => { closeAdd(); carnetTab = 'crew'; go('carnet'); editCrew(null); });
-  $('#act-new-loc').addEventListener('click', () => { closeAdd(); carnetTab = 'locations'; go('carnet'); editLoc(null); });
-
-  // Empty state : action contextuelle (projet sur l'accueil, feuille dans un projet)
-  document.addEventListener('click', e => {
-    if (e.target.dataset.action === 'add') {
-      if (State.view === 'projects') newProject(); else newSheet();
-    }
   });
 
   // Tri

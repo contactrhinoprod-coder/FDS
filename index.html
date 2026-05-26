@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>FDS — Feuille de Service</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./style.css?v=4" />
+  <link rel="stylesheet" href="./style.css?v=5" />
 </head>
 <body>
   <!-- ====================== ÉCRAN DE CONNEXION ====================== -->
@@ -57,8 +57,7 @@
         <div id="sheets-list" class="cards"></div>
         <div id="sheets-empty" class="empty-state" hidden>
           <div class="empty-icon">🎬</div>
-          <p id="empty-text">Aucun projet.</p>
-          <button class="btn-primary" data-action="add">Créer un projet</button>
+          <p id="empty-text">Aucun projet. Crée ton premier projet avec le bouton ci-dessus.</p>
         </div>
       </section>
 
@@ -131,9 +130,8 @@
 
     <!-- Barre de navigation du bas -->
     <nav id="tabbar">
-      <button class="tab active" data-go="sheets"><span>▦</span>Feuilles</button>
+      <button class="tab active" data-go="projects"><span>▦</span>Projet</button>
       <button class="tab" data-go="carnet"><span>☷</span>Carnet</button>
-      <button class="tab" id="add-tab"><span class="add-plus">＋</span></button>
       <button class="tab" data-go="profile"><span>☰</span>Profil</button>
     </nav>
 
@@ -193,6 +191,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="./app.js?v=4"></script>
+  <script src="./app.js?v=5"></script>
 </body>
 </html>
