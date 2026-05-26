@@ -244,8 +244,8 @@ input, select, textarea { font-family: inherit; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; min-width: 0; }
 .form-section-title {
-  font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent);
-  margin: 22px 0 10px; font-weight: 800; border-bottom: 1px solid var(--border); padding-bottom: 6px;
+  font-size: 1.4rem; text-transform: uppercase; letter-spacing: .5px; color: var(--accent);
+  margin: 26px 0 12px; font-weight: 800; border-bottom: 2px solid var(--accent); padding-bottom: 6px;
 }
 .inline-add {
   background: var(--surface-2); border: 1px dashed var(--border); border-radius: 10px;
@@ -422,3 +422,9 @@ input, select, textarea { font-family: inherit; }
   border-radius: 8px; padding: 5px 10px; font-size: .78rem; font-weight: 600; white-space: nowrap;
 }
 .loc-toggle:active { background: var(--surface); }
+
+/* Sous-titres (lieux, logos) — plus discrets que les grands titres de section */
+.form-subsection-title {
+  font-size: .82rem; text-transform: uppercase; letter-spacing: .5px; color: var(--accent);
+  font-weight: 800; border-bottom: 1px solid var(--border); padding-bottom: 5px; margin: 14px 0 8px;
+}

@@ -21,6 +21,18 @@
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Modèle de message par défaut (mail / partage). Variables remplacées à l'envoi.
+const DEFAULT_MESSAGE_TEMPLATE =
+  'Bonjour {prenom},\n\n' +
+  'Voici ta feuille de service pour "{projet}".\n\n' +
+  '📅 {date}{jour}\n' +
+  '🎬 Poste : {poste}\n' +
+  '⏰ Convocation : {heure}\n' +
+  '{lieu_line}{plan_line}{soleil_line}{meteo_line}\n' +
+  '{note_line}' +
+  'La feuille de service complète est en pièce jointe (PDF).\n\n' +
+  'À très vite sur le plateau !\n{prod}';
+
 const State = {
   projects: [],         // [{id, name, producers, created}]
   sheets: [],           // [{id, projectId, ...feuille}]
@@ -36,6 +48,9 @@ const State = {
     prodName: 'H2M et RhinoProd',
     logoLeft: '',        // dataURL
     logoRight: '',       // dataURL
+    // Modèle de message éditable. Variables : {prenom} {nom} {poste} {heure}
+    // {date} {jour} {projet} {lieu} {adresse} {plan} {soleil} {meteo} {note} {prod}
+    messageTemplate: DEFAULT_MESSAGE_TEMPLATE,
   },
 };
 
@@ -311,37 +326,46 @@ const Export = (() => {
    ============================================================ */
 const Mailer = (() => {
 
-  // Construit le message nominatif pour un membre donné
+  // Construit le message à partir du modèle éditable (settings.messageTemplate)
   function buildMessage(member, sheet, project) {
-    const loc = sheet.locTournage || {};
-    const lignes = [
-      `Bonjour ${member.name || ''},`,
-      ``,
-      `Voici ta feuille de service pour le tournage "${project?.name || sheet.subject || ''}".`,
-      ``,
-      `📅 ${fmtDateLong(sheet.date)}${sheet.dayNum ? ` — Jour ${sheet.dayNum}/${sheet.dayTotal || ''}` : ''}`,
-      `🎬 Poste : ${member.role || '—'}`,
-      `⏰ Convocation : ${member.call || sheet.dayStart || 'à confirmer'}`,
-      loc.name ? `📍 Lieu : ${loc.name}${loc.address ? ` (${loc.address})` : ''}` : '',
-      loc.mapUrl ? `🗺️ Plan : ${loc.mapUrl}` : '',
-      sheet.sunRise || sheet.sunSet ? `☀️ Soleil : lever ${sheet.sunRise || '—'} / coucher ${sheet.sunSet || '—'}` : '',
-      sheet.weather ? `🌤️ Météo : ${sheet.weather}` : '',
-      ``,
-      sheet.note ? `ℹ️ Note : ${sheet.note}` : '',
-      ``,
-      `La feuille de service complète est en pièce jointe (PDF).`,
-      ``,
-      `À très vite sur le plateau !`,
-      `${State.settings.prodName || ''}`,
-    ];
-    return lignes.filter(l => l !== undefined).join('\n');
+    const locArr = Array.isArray(sheet.locTournage) ? sheet.locTournage
+      : (sheet.locTournage ? [sheet.locTournage] : []);
+    const loc = locArr[0] || {};
+    const prenom = member.firstName || (member.name ? member.name.split(/\s+/).slice(1).join(' ') : '') || member.name || '';
+    const prod = (project && project.producers) || ''; // pas de fallback : vide si non renseigné
+
+    const vars = {
+      '{prenom}': prenom,
+      '{nom}': member.lastName || '',
+      '{poste}': member.role || '—',
+      '{heure}': member.call || sheet.dayStart || 'à confirmer',
+      '{date}': fmtDateLong(sheet.date),
+      '{jour}': sheet.dayNum ? ` — Jour ${sheet.dayNum}/${sheet.dayTotal || ''}` : '',
+      '{projet}': (project && project.name) || sheet.subject || '',
+      '{lieu}': loc.name || '',
+      '{adresse}': loc.address || '',
+      '{plan}': loc.mapUrl || '',
+      '{soleil}': (sheet.sunRise || sheet.sunSet) ? `lever ${sheet.sunRise || '—'} / coucher ${sheet.sunSet || '—'}` : '',
+      '{meteo}': sheet.weather || '',
+      '{note}': sheet.note || '',
+      '{prod}': prod,
+      // lignes complètes conditionnelles (vides si pas de donnée)
+      '{lieu_line}': loc.name ? `📍 Lieu : ${loc.name}${loc.address ? ` (${loc.address})` : ''}\n` : '',
+      '{plan_line}': loc.mapUrl ? `🗺️ Plan : ${loc.mapUrl}\n` : '',
+      '{soleil_line}': (sheet.sunRise || sheet.sunSet) ? `☀️ Soleil : lever ${sheet.sunRise || '—'} / coucher ${sheet.sunSet || '—'}\n` : '',
+      '{meteo_line}': sheet.weather ? `🌤️ Météo : ${sheet.weather}\n` : '',
+      '{note_line}': sheet.note ? `ℹ️ Note : ${sheet.note}\n\n` : '',
+    };
+    let msg = State.settings.messageTemplate || '';
+    for (const [k, v] of Object.entries(vars)) msg = msg.split(k).join(v);
+    // nettoyage : lignes vides multiples
+    return msg.replace(/\n{3,}/g, '\n\n').trim();
   }
 
   function subject(member, sheet, project) {
-    return `Feuille de service — ${project?.name || sheet.subject || 'Tournage'} — ${fmtDateShort(sheet.date)}`;
+    return `Feuille de service — ${(project && project.name) || sheet.subject || 'Tournage'} — ${fmtDateShort(sheet.date)}`;
   }
 
-  // Ouvre l'app mail pré-remplie pour UN membre
   function mailToMember(member, sheet, project) {
     if (!member.email) { toast('Pas d\'email renseigné pour ce membre'); return; }
     const url = `mailto:${encodeURIComponent(member.email)}`
@@ -350,7 +374,19 @@ const Mailer = (() => {
     window.location.href = url;
   }
 
-  return { mailToMember, buildMessage, subject };
+  // Mail groupé : plusieurs destinataires en copie, message générique (sans prénom)
+  function mailToGroup(members, sheet, project) {
+    const emails = members.map(m => m.email).filter(Boolean);
+    if (!emails.length) { toast('Aucun email parmi les sélectionnés'); return; }
+    // message générique : on remplace {prenom} par "à tous"
+    const generic = { ...(members[0]||{}), firstName: 'à toute l\'équipe', lastName: '', call: sheet.dayStart || '' };
+    const url = `mailto:${encodeURIComponent(emails.join(','))}`
+      + `?subject=${encodeURIComponent(subject(generic, sheet, project))}`
+      + `&body=${encodeURIComponent(buildMessage(generic, sheet, project))}`;
+    window.location.href = url;
+  }
+
+  return { mailToMember, mailToGroup, buildMessage, subject };
 })();
 
 const Share = (() => {
@@ -400,14 +436,17 @@ const FdsRender = (() => {
     // Logos : priorité au projet, puis surcharge éventuelle de la feuille, puis réglages globaux.
     const logoL = (p && p.logoLeft) || s.logoLeft || State.settings.logoLeft || '';
     const logoR = (p && p.logoRight) || s.logoRight || State.settings.logoRight || '';
+    const subject = s.subject || (p && p.name) || '';
+    const producers = (p && p.producers) || ''; // pas de fallback réglages : on n'affiche que si renseigné au projet
+    const dateLine = fmtDateLong(s.date);
     return `
     <table class="fds-header"><tr>
       ${logoCell(logoL, 'GAUCHE')}
       <td class="fds-title-cell">
         <div class="t1">FEUILLE DE SERVICE${s.sheetNum ? ' N°' + esc(s.sheetNum) : ''}</div>
-        <div class="t2">${esc(s.subject || (p && p.name) || '')}</div>
-        <div class="t3">Produit par ${esc(p && p.producers || State.settings.prodName || '')}</div>
-        <div class="t4">${esc(fmtDateLong(s.date))}${s.dayNum ? ' - JOUR ' + esc(s.dayNum) + '/' + esc(s.dayTotal || '') : ''}</div>
+        ${subject ? `<div class="t2">${esc(subject)}</div>` : ''}
+        ${producers ? `<div class="t3">Produit par ${esc(producers)}</div>` : ''}
+        ${dateLine ? `<div class="t4">${esc(dateLine)}${s.dayNum ? ' - JOUR ' + esc(s.dayNum) + '/' + esc(s.dayTotal || '') : ''}</div>` : ''}
       </td>
       ${logoCell(logoR, 'DROITE')}
     </tr></table>`;
@@ -579,11 +618,15 @@ const FdsRender = (() => {
   }
 
   function footer(s, p) {
+    const left = s.subject || (p && p.name) || '';
+    const mid = s.footer || s.episode || '';
+    const right = (p && p.producers) || '';
+    if (!left && !mid && !right) return ''; // rien à afficher
     return `
     <table class="fds-foot"><tr>
-      <td>${esc(s.subject || (p && p.name) || '')}</td>
-      <td class="mid">${esc(s.footer || s.episode || '')}</td>
-      <td>${esc(p && p.producers || State.settings.prodName || '')}</td>
+      <td>${esc(left)}</td>
+      <td class="mid">${esc(mid)}</td>
+      <td>${esc(right)}</td>
     </tr></table>`;
   }
 
@@ -804,7 +847,7 @@ function renderLocType(key) {
     summary = names.length ? ` <span class="muted small">— ${esc(names.join(', '))}</span>` : ' <span class="muted small">— non renseigné</span>';
   }
   let html = `<div class="loc-head">
-      <div class="form-section-title" style="margin:8px 0;flex:1">${LOC_LABELS[key]}${summary}</div>
+      <div class="form-subsection-title" style="margin:8px 0;flex:1">${LOC_LABELS[key]}${summary}</div>
       ${collapsible ? `<button class="loc-toggle" data-loc-toggle="${key}">${collapsed ? '▼ Déplier' : '▲ Replier'}</button>` : ''}
     </div>`;
 
@@ -994,8 +1037,9 @@ function renderEditorForm() {
   // Créer un membre au carnet ET l'ajouter à la feuille en cours
   $('#new-crew-carnet').addEventListener('click', () => {
     editCrew(null, (saved) => {
-      editDraft.crew.push({ id: uid(), role: saved.role, name: saved.name, phone: saved.phone,
-        email: saved.email, diet: saved.diet || '', notes: saved.notes || '',
+      editDraft.crew.push({ id: uid(), role: saved.role, name: saved.name,
+        lastName: saved.lastName || '', firstName: saved.firstName || '',
+        phone: saved.phone, email: saved.email, diet: saved.diet || '', notes: saved.notes || '',
         call: editDraft.dayStart || '', key: false });
       renderCrewRows();
     });
@@ -1058,6 +1102,11 @@ function renderCrewRows() {
   const box = $('#crew-rows');
   box.innerHTML = editDraft.crew.map((m, i) => {
     const custom = isCustomRole(m.role);
+    // rétro-compat : découper name si lastName/firstName absents
+    if (!m.lastName && !m.firstName && m.name) {
+      const parts = m.name.trim().split(/\s+/);
+      m.lastName = parts.shift() || ''; m.firstName = parts.join(' ');
+    }
     return `
     <div class="repeat-item" data-i="${i}">
       <button class="del-row" data-del-crew="${i}">✕</button>
@@ -1067,7 +1116,10 @@ function renderCrewRows() {
         <label>Poste personnalisé</label>
         <input data-role-input="${i}" value="${custom ? esc(m.role) : ''}" placeholder="Saisir le poste">
       </div>
-      <div class="field"><label>Nom Prénom</label><input data-cm="${i}.name" value="${esc(m.name)}"></div>
+      <div class="field-row">
+        <div class="field"><label>Nom</label><input data-cmn="${i}.lastName" value="${esc(m.lastName)}" placeholder="GANTIÉ"></div>
+        <div class="field"><label>Prénom</label><input data-cmn="${i}.firstName" value="${esc(m.firstName)}" placeholder="Julien"></div>
+      </div>
       <div class="field-row">
         <div class="field"><label>Téléphone</label><input data-cm="${i}.phone" value="${esc(m.phone)}"></div>
         <div class="field"><label>Convoc.</label><input data-cm="${i}.call" value="${esc(m.call)}" placeholder="8h"></div>
@@ -1076,6 +1128,14 @@ function renderCrewRows() {
       <label style="font-size:.82rem;color:var(--text-dim)"><input type="checkbox" data-cm="${i}.key" ${m.key?'checked':''}> Contact clé (en-tête)</label>
     </div>`;
   }).join('');
+  // champs nom/prénom : recalculent name
+  $$('[data-cmn]', box).forEach(el => {
+    const [i, sub] = el.dataset.cmn.split('.');
+    el.addEventListener('input', () => {
+      editDraft.crew[i][sub] = el.value;
+      editDraft.crew[i].name = [editDraft.crew[i].lastName, editDraft.crew[i].firstName].filter(Boolean).join(' ');
+    });
+  });
   // champs simples
   $$('[data-cm]', box).forEach(el => {
     const [i, sub] = el.dataset.cm.split('.');
@@ -1260,7 +1320,7 @@ function applyPicker() {
     const ids = $$('#picker-list input:checked').map(i => i.value);
     for (const id of ids) {
       const m = byId(State.crew, id);
-      if (m) editDraft.crew.push({ id: uid(), role: m.role, name: m.name, phone: m.phone, email: m.email, diet: m.diet || '', notes: m.notes || '', call: editDraft.dayStart || '', key: false });
+      if (m) editDraft.crew.push({ id: uid(), role: m.role, name: m.name, lastName: m.lastName || '', firstName: m.firstName || '', phone: m.phone, email: m.email, diet: m.diet || '', notes: m.notes || '', call: editDraft.dayStart || '', key: false });
     }
     renderCrewRows();
   } else if (pickerMode === 'loc' || pickerMode === 'prod') {
@@ -1362,10 +1422,44 @@ function openMini(title, bodyHtml, onSave) {
 }
 function closeMini() { $('#mini-backdrop').hidden = true; $('#mini-modal').hidden = true; miniSave = null; }
 
+// Éditeur du modèle de message (mail / partage) dans le Profil
+function editMessageTemplate() {
+  const tpl = State.settings.messageTemplate || '';
+  openMini('Modèle de message', `
+    <p class="muted small">Ce texte est utilisé pour les mails et le partage. Les variables entre accolades sont remplacées automatiquement par les infos de la feuille et du membre.</p>
+    <div class="field">
+      <label>Modèle</label>
+      <textarea data-tpl style="min-height:240px;font-family:inherit">${esc(tpl)}</textarea>
+    </div>
+    <p class="muted small">Variables disponibles :<br>
+      <code>{prenom}</code> <code>{nom}</code> <code>{poste}</code> <code>{heure}</code> <code>{date}</code> <code>{jour}</code> <code>{projet}</code> <code>{lieu}</code> <code>{adresse}</code> <code>{plan}</code> <code>{soleil}</code> <code>{meteo}</code> <code>{note}</code> <code>{prod}</code><br><br>
+      Lignes complètes (n'apparaissent que si l'info existe) :<br>
+      <code>{lieu_line}</code> <code>{plan_line}</code> <code>{soleil_line}</code> <code>{meteo_line}</code> <code>{note_line}</code>
+    </p>
+    <button class="inline-add" id="tpl-reset">↺ Rétablir le modèle par défaut</button>
+  `, async (form) => {
+    const ta = $('[data-tpl]', form);
+    State.settings.messageTemplate = ta ? ta.value : tpl;
+    await Store.setKV('settings', State.settings);
+    toast('Modèle enregistré');
+    return true;
+  });
+  const reset = $('#tpl-reset');
+  if (reset) reset.addEventListener('click', () => {
+    const ta = $('[data-tpl]', $('#mini-form'));
+    if (ta) ta.value = DEFAULT_MESSAGE_TEMPLATE;
+  });
+}
+
 function editCrew(m, onSaved) {
   const isNew = !m;
   m = m || { id: uid(), role: '', name: '', phone: '', email: '', diet: '', notes: '' };
   const custom = isCustomRole(m.role);
+  // Rétro-compat : si seul "name" existe, on tente de le découper
+  if (!m.lastName && !m.firstName && m.name) {
+    const parts = m.name.trim().split(/\s+/);
+    m.lastName = parts.shift() || ''; m.firstName = parts.join(' ');
+  }
   openMini(isNew ? 'Nouveau membre' : 'Modifier', `
     <button class="inline-add" id="mini-from-contacts">📱 Importer depuis mes contacts</button>
     <div class="field"><label>Poste</label><select data-m="role"><option value=""></option>${roleOptions(m.role)}</select></div>
@@ -1373,17 +1467,22 @@ function editCrew(m, onSaved) {
       <label>Poste personnalisé</label>
       <input data-m="roleCustom" value="${custom ? esc(m.role) : ''}" placeholder="Saisir le poste">
     </div>
-    ${field('Nom Prénom', 'name', m.name, 'text', 'ex. GANTIÉ Julien')}
+    <div class="field-row">
+      ${field('Nom', 'lastName', m.lastName, 'text', 'ex. GANTIÉ')}
+      ${field('Prénom', 'firstName', m.firstName, 'text', 'ex. Julien')}
+    </div>
     ${field('Téléphone', 'phone', m.phone)}
     ${field('Email', 'email', m.email, 'email')}
-    ${field('Restrictions alimentaires', 'diet', m.diet, 'text', 'ex. végétarien, sans gluten, allergie arachides')}
+    ${field('Restrictions alimentaires', 'diet', m.diet, 'text', 'ex. végétarien, sans gluten')}
     ${field('Commentaire', 'notes', m.notes, 'textarea', 'Note libre sur ce membre')}
   `.replace(/data-k=/g, 'data-m='), async (form) => {
-    const get = k => { const el = $(`[data-m="${k}"]`, form); return el ? el.value : ''; };
+    const get = k => { const el = $(`[data-m="${k}"]`, form); return el ? el.value.trim() : ''; };
     let role = get('role');
     if (role === '__autre__') role = get('roleCustom');
-    const obj = { ...m, role, name: get('name'), phone: get('phone'), email: get('email'), diet: get('diet'), notes: get('notes') };
-    if (!obj.name) { toast('Nom requis'); return false; }
+    const lastName = get('lastName'), firstName = get('firstName');
+    const name = [lastName, firstName].filter(Boolean).join(' ');
+    const obj = { ...m, role, lastName, firstName, name, phone: get('phone'), email: get('email'), diet: get('diet'), notes: get('notes') };
+    if (!name) { toast('Nom ou prénom requis'); return false; }
     await persist('crew', obj);
     const i = State.crew.findIndex(x => x.id === obj.id);
     if (i >= 0) State.crew[i] = obj; else State.crew.push(obj);
@@ -1558,7 +1657,7 @@ function editProject(p) {
       <input data-p="name" value="${esc(p.name)}" placeholder=""></div>
     <div class="field"><label>Produit par (maison de production)</label>
       <input data-p="producers" value="${esc(p.producers)}" placeholder=""></div>
-    <div class="form-section-title">Logos (facultatifs)</div>
+    <div class="form-subsection-title">Logos (facultatifs)</div>
     <p class="muted small">Affichés en en-tête de chaque feuille du projet. Gauche et/ou droite.</p>
     <div class="logo-pick" id="logo-left-wrap">${logoPickHtml('left', projDraft.logoLeft, 'Logo gauche')}</div>
     <div class="logo-pick" id="logo-right-wrap">${logoPickHtml('right', projDraft.logoRight, 'Logo droit')}</div>
@@ -1675,27 +1774,76 @@ function copyLocList(v) {
   return JSON.parse(JSON.stringify(arr));
 }
 
-// Menu mail nominatif : choisir le destinataire dans l'équipe
+// Menu mail : sélection de destinataires (cases à cocher), envoi groupé ou nominatif
 function openMailMenu() {
   const s = byId(State.sheets, State.currentSheetId);
   if (!s) return;
   const p = byId(State.projects, s.projectId);
   const withMail = (s.crew || []).filter(m => m.email);
   if (!withMail.length) { toast('Aucun email renseigné dans l\'équipe'); return; }
-  $('#picker-title-h').textContent = 'Envoyer la FDS par mail (nominatif)';
-  $('#picker-list').innerHTML = withMail.map(m => `
-    <button class="pick-row" data-mail="${m.id}" style="width:100%;text-align:left;border:1px solid var(--border)">
+  $('#picker-title-h').textContent = 'Envoyer la FDS par mail';
+  $('#picker-list').innerHTML = `
+    <div class="pick-toolbar">
+      <button class="btn-ghost" id="mail-all">Tout sélectionner</button>
+      <span class="muted small" id="mail-count">Aucun sélectionné</span>
+    </div>
+    ${withMail.map(m => `<label class="pick-row">
+      <input type="checkbox" value="${m.id}">
       <span class="pick-main"><b>${esc(m.name)}</b><span class="muted small">${esc(m.role||'')} · ${esc(m.email)}</span></span>
-      <span>✉️</span>
-    </button>`).join('')
-    + '<p class="muted small" style="margin-top:10px">Le mail s\'ouvre pré-rempli (objet + message adaptés au poste). Pensez à joindre le PDF exporté avant d\'envoyer.</p>';
-  pickerMode = 'mail';
+    </label>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn-primary" id="mail-individual" style="flex:1">Envoyer nominatif (1 par 1)</button>
+      <button class="btn-ghost" id="mail-group" style="flex:1">Envoyer groupé</button>
+    </div>
+    <p class="muted small" style="margin-top:10px">Nominatif = un message personnalisé par personne (Bonjour [prénom]…). Groupé = un seul mail à tous les sélectionnés. Pensez à joindre le PDF avant d'envoyer.</p>`;
+  pickerMode = 'mailmulti';
+  $('#picker-done').style.display = 'none';
   $('#picker-backdrop').hidden = false; $('#picker-modal').hidden = false;
-  $$('[data-mail]').forEach(b => b.addEventListener('click', () => {
-    const m = byId(s.crew, b.dataset.mail);
-    Mailer.mailToMember(m, s, p);
+
+  const upd = () => {
+    const n = $$('#picker-list input:checked').length;
+    $('#mail-count').textContent = n ? `${n} sélectionné${n>1?'s':''}` : 'Aucun sélectionné';
+    const total = $$('#picker-list input[type=checkbox]').length;
+    $('#mail-all').textContent = (n>=total && total>0) ? 'Tout désélectionner' : 'Tout sélectionner';
+  };
+  $$('#picker-list input[type=checkbox]').forEach(c => c.addEventListener('change', upd));
+  $('#mail-all').addEventListener('click', () => {
+    const boxes = $$('#picker-list input[type=checkbox]');
+    const check = boxes.some(b => !b.checked);
+    boxes.forEach(b => b.checked = check); upd();
+  });
+  upd();
+
+  const selected = () => $$('#picker-list input:checked').map(i => byId(s.crew, i.value)).filter(Boolean);
+  $('#mail-individual').addEventListener('click', () => {
+    const list = selected();
+    if (!list.length) { toast('Sélectionne au moins une personne'); return; }
+    // ouvre le 1er mail ; les autres suivront via une petite file (l'utilisateur revient dans l'app)
     closePicker();
-  }));
+    sendIndividualQueue(list, s, p);
+  });
+  $('#mail-group').addEventListener('click', () => {
+    const list = selected();
+    if (!list.length) { toast('Sélectionne au moins une personne'); return; }
+    Mailer.mailToGroup(list, s, p);
+    closePicker();
+  });
+}
+
+// Envoi nominatif en file : ouvre un mail, et propose le suivant au retour dans l'app
+function sendIndividualQueue(list, s, p) {
+  let idx = 0;
+  function next() {
+    if (idx >= list.length) { toast('Tous les mails ont été ouverts'); return; }
+    const m = list[idx++];
+    Mailer.mailToMember(m, s, p);
+    if (idx < list.length) {
+      setTimeout(() => {
+        if (confirm(`Mail pour ${list[idx-1].name} ouvert.\n\nOuvrir le suivant (${list[idx].name}) ?`)) next();
+      }, 1200);
+    }
+  }
+  next();
 }
 
 function bind() {
@@ -1779,6 +1927,7 @@ function bind() {
     if (v != null) { State.settings.prodName = v; await Store.setKV('settings', State.settings); toast('Enregistré'); }
   });
   $('#set-export').addEventListener('click', () => Export.toJSON());
+  $('#set-template').addEventListener('click', editMessageTemplate);
   $('#set-import').addEventListener('click', importJSON);
   $('#set-cloud').addEventListener('click', cloudToggle);
   $('#set-wipe').addEventListener('click', async () => {
