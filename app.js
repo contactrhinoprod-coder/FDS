@@ -1128,8 +1128,13 @@ function bind() {
   });
 
   // Login screen
-  $('#login-google-btn').addEventListener('click', () => Cloud.signInGoogle().catch(showLoginErr));
-  $('#login-skip-btn').addEventListener('click', () => { $('#login-screen').hidden = true; });
+  const gbtn = $('#login-google-btn');
+  if (gbtn) gbtn.addEventListener('click', () => Cloud.signInGoogle().catch(showLoginErr));
+  const skip = $('#login-skip-btn');
+  if (skip) skip.addEventListener('click', () => {
+    const ls = $('#login-screen'); if (ls) ls.hidden = true;
+    go('projects');
+  });
 }
 
 function showExportMenu(s, p) {
@@ -1215,10 +1220,21 @@ async function loadAll() {
 }
 
 async function start() {
-  await Store.init();
-  await loadAll();
+  // L'écran de login reste masqué par défaut. On ne l'affiche QUE si
+  // Firebase est configuré ET que l'utilisateur n'est pas connecté.
+  const loginScreen = $('#login-screen');
+  if (loginScreen) loginScreen.hidden = true;
+
+  try {
+    await Store.init();
+    await loadAll();
+  } catch (e) { console.error('Store init', e); }
+
   applyTheme();
-  bind();
+
+  // bind() ne doit jamais empêcher l'app de démarrer
+  try { bind(); } catch (e) { console.error('bind', e); }
+
   go('projects');
 
   // Service worker
@@ -1227,14 +1243,16 @@ async function start() {
     navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
   }
 
-  // Cloud : si configuré, on tente l'auth et on affiche l'écran de login
+  // Cloud : si configuré, on tente l'auth et on affiche l'écran de login.
+  // Sinon (cas actuel, FIREBASE_CONFIG non rempli) : l'app reste 100% locale,
+  // l'écran de login ne s'affiche jamais.
   if (Cloud.configured()) {
     Cloud.init(async (u) => {
       if (u) {
-        $('#login-screen').hidden = true;
+        if (loginScreen) loginScreen.hidden = true;
         try { await Cloud.pullAll(); await loadAll(); go('projects'); } catch (e) {}
       } else {
-        $('#login-screen').hidden = false; // propose Google/Apple
+        if (loginScreen) loginScreen.hidden = false; // propose Google/Apple
       }
       renderProfile();
     });
