@@ -347,11 +347,20 @@ input, select, textarea { font-family: inherit; }
 .fds-loc a { color: #1155cc; word-break: break-all; }
 
 /* Convocations — tableau en lignes, classé par catégorie */
-.fds-conv-rows { table-layout: fixed; }
+.fds-conv-rows { table-layout: auto; }
 .fds-conv-rows th { background: #f0f0f0; font-size: 9px; text-transform: uppercase; text-align: left; font-weight: 800; }
-.fds-conv-rows td { text-align: left; font-size: 9.5px; word-break: break-word; }
-.fds-conv-rows .nm { font-weight: 700; }
-.fds-conv-rows .cv { font-weight: 800; color: #c00; text-align: center; }
+.fds-conv-rows td { text-align: left; font-size: 9.5px; }
+.fds-conv-rows .nm { font-weight: 700; white-space: nowrap; }
+/* Téléphone : JAMAIS coupé, colonne au plus juste */
+.fds-conv-rows .c-tel, .fds-conv-rows .tel { white-space: nowrap; width: 1%; font-size: 9px; }
+/* RDV : très étroit */
+.fds-conv-rows .c-rdv, .fds-conv-rows .cv { width: 1%; white-space: nowrap; text-align: center; }
+.fds-conv-rows .cv { font-weight: 800; color: #c00; }
+/* Poste : au plus juste */
+.fds-conv-rows .c-poste { width: 1%; white-space: nowrap; }
+.fds-conv-rows td:first-child { white-space: nowrap; }
+/* Mail : prend le surplus, peut se couper (le moins critique) */
+.fds-conv-rows .c-mail, .fds-conv-rows .mail { font-size: 8px; word-break: break-all; }
 .fds-conv-rows .conv-cat {
   background: #404040; color: #fff; font-weight: 800; text-transform: uppercase;
   font-size: 9px; letter-spacing: .5px; text-align: center;
@@ -368,24 +377,48 @@ input, select, textarea { font-family: inherit; }
 .fds-foot td { text-align: center; font-weight: 700; }
 .fds-foot .mid { font-style: italic; }
 
-/* ---------------- Impression ---------------- */
+/* ---------------- Aperçu / Impression PDF ---------------- */
 #print-area { display: none; }
+
+/* Overlay plein écran d'aperçu impression (sans pop-up) */
+#pdf-overlay {
+  position: fixed; inset: 0; z-index: 9999; background: #525659;
+  overflow: auto; -webkit-overflow-scrolling: touch;
+}
+.pdf-bar {
+  position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; background: #1f1f1f; padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top));
+}
+.pdf-title { color: #fff; font-weight: 700; font-size: .95rem; }
+.pdf-btn-main { background: #c00; color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-weight: 700; }
+.pdf-btn-ghost { background: #3a3a3a; color: #fff; border: none; border-radius: 8px; padding: 10px 14px; }
+.pdf-hint { color: #ddd; font-size: .8rem; text-align: center; padding: 10px 16px; }
+#pdf-paper {
+  background: #fff; max-width: 800px; margin: 0 auto 30px; padding: 0;
+}
+#pdf-paper .fds-doc { border: 1px solid #000; }
 
 @media print {
   @page { size: A4 portrait; margin: 8mm; }
-  body * { visibility: hidden; }
-  #print-area, #print-area * { visibility: visible; }
-  #print-area { display: block; position: absolute; left: 0; top: 0; width: 100%; }
-  #print-area .fds-doc {
-    border: 1px solid #000; max-width: 100%; width: 100%; font-size: 9px;
-  }
-  #print-area .fds-doc table { table-layout: fixed; width: 100%; }
-  #print-area .fds-doc td, #print-area .fds-doc th {
+  /* Si l'overlay PDF est ouvert : on n'imprime QUE le papier */
+  body.pdf-open > *:not(#pdf-overlay) { display: none !important; }
+  #pdf-overlay { position: static; background: #fff; overflow: visible; }
+  .pdf-bar, .pdf-hint { display: none !important; }
+  #pdf-paper { max-width: 100%; margin: 0; }
+  #pdf-paper .fds-doc { border: 1px solid #000; width: 100%; font-size: 9px; }
+  #pdf-paper .fds-doc table { table-layout: fixed; width: 100%; }
+  #pdf-paper .fds-doc table.fds-conv-rows { table-layout: auto; }
+  #pdf-paper .fds-doc .tel, #pdf-paper .fds-doc .c-tel { white-space: nowrap; }
+  #pdf-paper .fds-doc td, #pdf-paper .fds-doc th {
     padding: 2px 3px; word-break: break-word; overflow-wrap: anywhere;
   }
-  /* éviter qu'une ligne de tableau soit coupée entre 2 pages */
-  #print-area .fds-doc tr { page-break-inside: avoid; }
-  #print-area .fds-doc a { word-break: break-all; }
+  #pdf-paper .fds-doc tr { page-break-inside: avoid; }
+  #pdf-paper .fds-doc a { word-break: break-all; }
+
+  /* Fallback ancien #print-area (au cas où) */
+  body:not(.pdf-open) * { visibility: hidden; }
+  body:not(.pdf-open) #print-area, body:not(.pdf-open) #print-area * { visibility: visible; }
+  body:not(.pdf-open) #print-area { display: block; position: absolute; left: 0; top: 0; width: 100%; }
 }
 
 /* Toolbar du picker (tout sélectionner + compteur) */

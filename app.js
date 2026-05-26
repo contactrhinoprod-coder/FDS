@@ -259,14 +259,28 @@ const Export = (() => {
   // PDF : on remplit #print-area avec le rendu, puis window.print().
   // Les règles @media print (style.css) isolent #print-area en A4.
   function toPDF(sheet, project) {
-    const area = $('#print-area');
-    area.innerHTML = FdsRender.html(sheet, project);
-    // Laisse le DOM se peindre avant d'imprimer
-    setTimeout(() => {
-      window.print();
-      // nettoyage différé (après la boîte d'impression)
-      setTimeout(() => { area.innerHTML = ''; }, 1000);
-    }, 60);
+    const inner = FdsRender.html(sheet, project);
+    // Méthode robuste SANS pop-up (Brave/iOS bloquent window.open) :
+    // un overlay plein écran injecté dans la page. À l'impression, le CSS
+    // @media print ne montre que cet overlay.
+    let ov = document.getElementById('pdf-overlay');
+    if (ov) ov.remove();
+    ov = document.createElement('div');
+    ov.id = 'pdf-overlay';
+    ov.innerHTML = `
+      <div class="pdf-bar">
+        <button id="pdf-close" class="pdf-btn-ghost">✕ Fermer</button>
+        <span class="pdf-title">Aperçu impression</span>
+        <button id="pdf-print" class="pdf-btn-main">📄 Imprimer / PDF</button>
+      </div>
+      <div class="pdf-hint">Sur iPhone : « Imprimer / PDF », puis pince pour zoomer l'aperçu et touche Partager → « Enregistrer dans Fichiers ».</div>
+      <div id="pdf-paper">${inner}</div>`;
+    document.body.appendChild(ov);
+    document.body.classList.add('pdf-open');
+    document.getElementById('pdf-close').addEventListener('click', () => {
+      ov.remove(); document.body.classList.remove('pdf-open');
+    });
+    document.getElementById('pdf-print').addEventListener('click', () => { window.print(); });
   }
 
   // DOC : HTML-Word. Un fichier .doc qui s'ouvre dans Word / Pages /
@@ -571,11 +585,11 @@ const FdsRender = (() => {
       (byCat[cat] = byCat[cat] || []).push(m);
     }
     const head = `<tr>
-      <th style="width:22%">Poste</th>
-      <th style="width:26%">Nom Prénom</th>
-      <th style="width:18%">Téléphone</th>
-      <th style="width:24%">Mail</th>
-      <th style="width:10%">RDV</th>
+      <th class="c-poste">Poste</th>
+      <th class="c-nom">Nom Prénom</th>
+      <th class="c-tel">Téléphone</th>
+      <th class="c-mail">Mail</th>
+      <th class="c-rdv">RDV</th>
     </tr>`;
     let body = '';
     for (const cat of CATEGORIES) {
@@ -585,8 +599,8 @@ const FdsRender = (() => {
       body += list.map(m => `<tr>
         <td>${esc(m.role || '')}</td>
         <td class="nm">${esc(m.name || '')}</td>
-        <td>${esc(m.phone || '')}</td>
-        <td style="font-size:8.5px">${esc(m.email || '')}</td>
+        <td class="tel">${esc(m.phone || '')}</td>
+        <td class="mail">${esc(m.email || '')}</td>
         <td class="cv">${esc(m.call || s.dayStart || '')}</td>
       </tr>`).join('');
     }
@@ -1912,9 +1926,18 @@ function bind() {
   $('#preview-dup').addEventListener('click', async () => {
     const s = byId(State.sheets, State.currentSheetId);
     const copy = JSON.parse(JSON.stringify(s));
-    copy.id = uid(); copy.sheetNum = ''; copy.crew = (copy.crew||[]).map(m => ({ ...m, id: uid() }));
+    copy.id = uid();
+    copy.draft = false;
+    copy.crew = (copy.crew||[]).map(m => ({ ...m, id: uid() }));
+    // Numéro avec suffixe _1, _2… : on cherche le prochain libre dans le projet
+    const base = (s.sheetNum || '').replace(/_\d+$/, '') || 'copie';
+    const siblings = State.sheets.filter(x => x.projectId === s.projectId);
+    let n = 1;
+    const exists = num => siblings.some(x => (x.sheetNum || '') === num);
+    while (exists(`${base}_${n}`)) n++;
+    copy.sheetNum = `${base}_${n}`;
     await persist('sheets', copy); State.sheets.push(copy);
-    State.currentSheetId = copy.id; renderPreview(); toast('Feuille dupliquée');
+    State.currentSheetId = copy.id; renderPreview(); toast(`Feuille dupliquée (${copy.sheetNum})`);
   });
 
   // Profil
