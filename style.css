@@ -371,3 +371,18 @@ input, select, textarea { font-family: inherit; }
   }
   #print-area .fds-doc td, #print-area .fds-doc th { padding: 2px 4px; }
 }
+
+/* Toolbar du picker (tout sélectionner + compteur) */
+.pick-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; gap: 10px;
+}
+.pick-toolbar .btn-ghost { padding: 7px 12px; font-size: .85rem; }
+.pick-row { cursor: pointer; }
+
+/* Import de logos dans l'éditeur de projet */
+.logo-pick { margin-bottom: 10px; }
+.logo-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.logo-thumb { max-width: 90px; max-height: 54px; object-fit: contain; background: #fff; border-radius: 6px; padding: 4px; }
+.logo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.logo-actions .btn-ghost { padding: 7px 12px; font-size: .85rem; }

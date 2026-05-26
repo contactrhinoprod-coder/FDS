@@ -24,8 +24,9 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const State = {
   projects: [],         // [{id, name, producers, created}]
   sheets: [],           // [{id, projectId, ...feuille}]
-  crew: [],             // carnet équipe [{id, name, role, phone, email}]
+  crew: [],             // carnet équipe [{id, name, role, phone, email, diet, notes}]
   locations: [],        // carnet lieux  [{id, label, name, address, mapUrl, kind}]
+  productions: [],      // carnet production [{id, name, address, mapUrl, phone, email}]
   view: 'projects',
   currentProjectId: null,
   currentSheetId: null,
@@ -83,7 +84,7 @@ function fmtDateShort(iso) {
    Stores : projects, sheets, crew, locations, kv (réglages).
    ============================================================ */
 const Store = (() => {
-  const DB = 'fds', VER = 1;
+  const DB = 'fds', VER = 2;
   let db = null;
 
   function open() {
@@ -91,7 +92,7 @@ const Store = (() => {
       const req = indexedDB.open(DB, VER);
       req.onupgradeneeded = (e) => {
         const d = e.target.result;
-        for (const s of ['projects', 'sheets', 'crew', 'locations'])
+        for (const s of ['projects', 'sheets', 'crew', 'locations', 'productions'])
           if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' });
         if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv', { keyPath: 'k' });
       };
@@ -112,14 +113,15 @@ const Store = (() => {
 
   return {
     init: open,
-    projects:  api('projects'),
-    sheets:    api('sheets'),
-    crew:      api('crew'),
-    locations: api('locations'),
+    projects:    api('projects'),
+    sheets:      api('sheets'),
+    crew:        api('crew'),
+    locations:   api('locations'),
+    productions: api('productions'),
     getKV: (k)    => wrap(tx('kv', 'readonly').get(k)).then(r => r && r.v),
     setKV: (k, v) => wrap(tx('kv', 'readwrite').put({ k, v })),
     wipeAll: async () => {
-      for (const s of ['projects', 'sheets', 'crew', 'locations']) await api(s).clear();
+      for (const s of ['projects', 'sheets', 'crew', 'locations', 'productions']) await api(s).clear();
     },
   };
 })();
@@ -182,6 +184,7 @@ const Cloud = (() => {
     const batches = [
       ['projects', State.projects], ['sheets', State.sheets],
       ['crew', State.crew], ['locations', State.locations],
+      ['productions', State.productions],
     ];
     for (const [name, arr] of batches)
       for (const o of arr) await col(name).doc(o.id).set(o);
@@ -189,7 +192,7 @@ const Cloud = (() => {
   // Tire Firestore -> local (fusion simple : le cloud fait foi)
   async function pullAll() {
     if (!ready || !user) return;
-    for (const name of ['projects', 'sheets', 'crew', 'locations']) {
+    for (const name of ['projects', 'sheets', 'crew', 'locations', 'productions']) {
       const snap = await col(name).get();
       const arr = snap.docs.map(d => d.data());
       State[name] = arr;
@@ -269,7 +272,7 @@ const Export = (() => {
   function toJSON() {
     const data = {
       projects: State.projects, sheets: State.sheets,
-      crew: State.crew, locations: State.locations,
+      crew: State.crew, locations: State.locations, productions: State.productions,
       settings: State.settings, exportedAt: new Date().toISOString(),
     };
     triggerDownload(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
@@ -372,27 +375,53 @@ const FdsRender = (() => {
   }
 
   function header(s, p) {
+    // Logos : priorité au projet, puis surcharge éventuelle de la feuille, puis réglages globaux.
+    const logoL = (p && p.logoLeft) || s.logoLeft || State.settings.logoLeft || '';
+    const logoR = (p && p.logoRight) || s.logoRight || State.settings.logoRight || '';
     return `
     <table class="fds-header"><tr>
-      ${logoCell(State.settings.logoLeft, 'GAUCHE')}
+      ${logoCell(logoL, 'GAUCHE')}
       <td class="fds-title-cell">
         <div class="t1">FEUILLE DE SERVICE${s.sheetNum ? ' N°' + esc(s.sheetNum) : ''}</div>
         <div class="t2">${esc(s.subject || (p && p.name) || '')}</div>
         <div class="t3">Produit par ${esc(p && p.producers || State.settings.prodName || '')}</div>
         <div class="t4">${esc(fmtDateLong(s.date))}${s.dayNum ? ' - JOUR ' + esc(s.dayNum) + '/' + esc(s.dayTotal || '') : ''}</div>
       </td>
-      ${logoCell(State.settings.logoRight, 'DROITE')}
+      ${logoCell(logoR, 'DROITE')}
     </tr></table>`;
   }
 
   function band(s) {
-    // Horaires prévisionnels (PAT1, repas, PAT2, fin) + éphémérides
-    const r = (lbl, val, time) => `
-      <tr>
-        <td class="lbl">${esc(lbl)}</td>
-        <td>${esc(val)}</td>
-        <td style="text-align:center">${esc(time)}</td>
-      </tr>`;
+    // Horaires : liste dynamique. Rétro-compat avec anciennes feuilles (pat1/meal/pat2).
+    let sched = s.schedule;
+    if (!Array.isArray(sched) || !sched.length) {
+      sched = [];
+      if (s.pat1) sched.push({ label: 'PAT 1', time: s.pat1 });
+      if (s.meal) sched.push({ label: 'Repas', time: s.meal });
+      if (s.pat2) sched.push({ label: 'PAT 2', time: s.pat2 });
+    }
+    sched = sched.filter(x => x && (x.label || x.time));
+    // ligne de fin de journée toujours présente
+    const rows = sched.concat([{ label: 'Fin de journée', time: s.dayEnd || '' }]);
+
+    // colonne éphémérides/météo répartie sur les lignes
+    const ephCells = [
+      `<td class="eph">Lever soleil<br><span class="accent">${esc(s.sunRise || '')}</span></td>`,
+      `<td class="eph">Coucher soleil<br><span class="accent">${esc(s.sunSet || '')}</span></td>`,
+    ];
+    const bodyRows = rows.map((row, i) => {
+      let extra = '';
+      if (i === 0) {
+        extra = ephCells[0] + `<td class="eph" rowspan="${rows.length}"><span class="accent" style="font-size:13px">${esc(s.weather || '')}</span></td>`;
+      } else if (i === 1) {
+        extra = ephCells[1];
+      } else if (i === 2) {
+        extra = `<td class="eph" colspan="1" rowspan="${Math.max(1, rows.length - 2)}"></td>`;
+      }
+      const contactCell = i === 0 ? `<td rowspan="${rows.length}" style="font-size:9px">${keyContacts(s)}</td>` : '';
+      return `<tr>${contactCell}<td>${esc(row.label)}</td><td style="text-align:center">${esc(row.time)}</td>${extra}</tr>`;
+    }).join('');
+
     return `
     <div class="fds-sectionbar">Horaires prévisionnels &nbsp;•&nbsp; ${esc(s.dayStart || '')} - ${esc(s.dayEnd || '')}</div>
     <table class="fds-band">
@@ -402,23 +431,7 @@ const FdsRender = (() => {
         <td class="lbl" style="text-align:center">Éphémérides</td>
         <td class="lbl" style="text-align:center">Météo</td>
       </tr>
-      <tr>
-        <td rowspan="4" style="font-size:9px">${keyContacts(s)}</td>
-        <td>PAT 1</td><td style="text-align:center">${esc(s.pat1 || '')}</td>
-        <td class="eph">Lever soleil<br><span class="accent">${esc(s.sunRise || '')}</span></td>
-        <td class="eph" rowspan="2"><span class="accent" style="font-size:13px">${esc(s.weather || '')}</span></td>
-      </tr>
-      <tr>
-        <td>Repas</td><td style="text-align:center">${esc(s.meal || '')}</td>
-        <td class="eph">Coucher soleil<br><span class="accent">${esc(s.sunSet || '')}</span></td>
-      </tr>
-      <tr>
-        <td>PAT 2</td><td style="text-align:center">${esc(s.pat2 || '')}</td>
-        <td class="eph" colspan="2" rowspan="2"></td>
-      </tr>
-      <tr>
-        <td>Fin de journée</td><td style="text-align:center">${esc(s.dayEnd || '')}</td>
-      </tr>
+      ${bodyRows}
     </table>`;
   }
 
@@ -518,7 +531,7 @@ const FdsRender = (() => {
     return `
     <table class="fds-foot"><tr>
       <td>${esc(s.subject || (p && p.name) || '')}</td>
-      <td class="mid">${esc(s.episode || '')}</td>
+      <td class="mid">${esc(s.footer || s.episode || '')}</td>
       <td>${esc(p && p.producers || State.settings.prodName || '')}</td>
     </tr></table>`;
   }
@@ -697,13 +710,18 @@ function field(label, key, val, type = 'text', ph = '') {
     return `<div class="field"><label>${label}</label><textarea data-k="${key}" placeholder="${esc(ph)}">${esc(val||'')}</textarea></div>`;
   return `<div class="field"><label>${label}</label><input data-k="${key}" type="${type}" value="${esc(val||'')}" placeholder="${esc(ph)}"></div>`;
 }
-function locFields(label, key, l) {
+// Chaque lieu : nom + adresse (génère le lien Maps auto) + bouton "depuis le carnet"
+// filtré par type. `kind` = type pour filtrer le carnet.
+function locFields(label, key, l, kind) {
   l = l || {};
+  const carnetLabel = kind === 'prod' ? 'Choisir une production du carnet' : 'Choisir dans le carnet';
   return `<div class="repeat-item">
     <div class="form-section-title" style="margin-top:0">${label}</div>
+    <button class="inline-add" data-pickloc="${key}" data-kind="${kind}" style="margin-bottom:6px">📇 ${carnetLabel}</button>
+    <button class="inline-add" data-savetoloc="${key}" data-kind="${kind}" style="margin-bottom:8px">➕ Enregistrer ce lieu au carnet</button>
     <div class="field"><label>Nom du lieu</label><input data-loc="${key}.name" value="${esc(l.name)}"></div>
-    <div class="field"><label>Adresse</label><input data-loc="${key}.address" value="${esc(l.address)}"></div>
-    <div class="field"><label>Lien Google Maps</label><input data-loc="${key}.mapUrl" value="${esc(l.mapUrl)}" placeholder="https://maps.app.goo.gl/…"></div>
+    <div class="field"><label>Adresse (le lien Maps est généré automatiquement)</label><input data-loc="${key}.address" value="${esc(l.address)}"></div>
+    <div class="field"><label>Lien Google Maps (facultatif)</label><input data-loc="${key}.mapUrl" value="${esc(l.mapUrl)}" placeholder="vide = généré depuis l adresse"></div>
   </div>`;
 }
 
@@ -722,52 +740,52 @@ function renderEditorForm() {
   const f = $('#edit-form');
   f.innerHTML = `
     <div class="form-section-title">En-tête</div>
-    ${field('Numéro de feuille', 'sheetNum', s.sheetNum, 'text', 'ex. 2')}
-    ${field('Sujet / titre', 'subject', s.subject, 'text', 'PUB - SANTÉ MENTALE…')}
+    ${field('Numéro de feuille', 'sheetNum', s.sheetNum, 'text', 'ex. 1')}
+    ${field('Sujet / titre', 'subject', s.subject, 'text', '')}
     ${field('Date', 'date', s.date, 'date')}
     <div class="field-row">
       ${field('Jour n°', 'dayNum', s.dayNum, 'number')}
       ${field('sur', 'dayTotal', s.dayTotal, 'number')}
     </div>
-    ${field('Épisode (pied de page)', 'episode', s.episode, 'text', 'EP 1')}
+    ${field('Pied de page', 'footer', s.footer, 'text', 'ex. Épisode 1')}
 
     <div class="form-section-title">Horaires</div>
     <div class="field-row">
       ${field('Début journée', 'dayStart', s.dayStart, 'text', '8h')}
       ${field('Fin journée', 'dayEnd', s.dayEnd, 'text', '19h')}
     </div>
-    ${field('PAT 1', 'pat1', s.pat1, 'text', '9h - 12h30')}
-    ${field('Repas', 'meal', s.meal, 'text', '13h00 - 13h45')}
-    ${field('PAT 2', 'pat2', s.pat2, 'text', '13h45')}
+    <div id="schedule-rows"></div>
+    <button class="inline-add" id="add-sched-row">＋ Ajouter un PAT / repas</button>
 
     <div class="form-section-title">Éphémérides & météo</div>
     <div class="field-row">
       ${field('Lever soleil', 'sunRise', s.sunRise, 'text', '7h28')}
       ${field('Coucher soleil', 'sunSet', s.sunSet, 'text', '20h21')}
     </div>
-    ${field('Météo / °C', 'weather', s.weather, 'text', '11° - 5° 🌤')}
+    ${field('Météo / °C', 'weather', s.weather, 'text', '11° - 5°')}
 
     <div class="form-section-title">Note à l'équipe</div>
-    ${field('Note', 'note', s.note, 'textarea', 'Consignes, repas, météo…')}
+    ${field('Note', 'note', s.note, 'textarea', '')}
 
     <div class="form-section-title">Lieux</div>
-    ${locFields('Lieu de tournage', 'locTournage', s.locTournage)}
-    ${locFields('Parking', 'locParking', s.locParking)}
-    ${locFields('Hôpital le plus proche', 'locHopital', s.locHopital)}
-    ${locFields('Police la plus proche', 'locPolice', s.locPolice)}
-    ${locFields('Production', 'locProd', s.locProd)}
-    <button class="inline-add" id="pick-loc">＋ Importer un lieu depuis le carnet</button>
+    ${locFields('Lieu de tournage', 'locTournage', s.locTournage, 'tournage')}
+    ${locFields('Parking', 'locParking', s.locParking, 'parking')}
+    ${locFields('Hôpital le plus proche', 'locHopital', s.locHopital, 'hopital')}
+    ${locFields('Police la plus proche', 'locPolice', s.locPolice, 'police')}
+    ${locFields('Production', 'locProd', s.locProd, 'prod')}
 
     <div class="form-section-title">Convocations (équipe)</div>
     <div id="crew-rows"></div>
-    <button class="inline-add" id="add-crew-row">＋ Ajouter un membre</button>
-    <button class="inline-add" id="pick-crew">＋ Importer depuis le carnet</button>
+    <button class="inline-add" id="add-crew-row">＋ Ajouter un membre (saisie directe)</button>
+    <button class="inline-add" id="pick-crew">📇 Importer depuis le carnet</button>
+    <button class="inline-add" id="new-crew-carnet">➕ Créer un membre au carnet (et l'ajouter ici)</button>
 
     <div class="form-section-title">Détails des scènes</div>
     ${field('Synopsis du jour', 'scenesSynopsis', s.scenesSynopsis, 'textarea')}
     <div id="scene-rows"></div>
     <button class="inline-add" id="add-scene-row">＋ Ajouter une scène</button>
   `;
+  renderScheduleRows();
   renderCrewRows();
   renderSceneRows();
 
@@ -783,6 +801,19 @@ function renderEditorForm() {
     editDraft[key] = editDraft[key] || {};
     editDraft[key][sub] = el.value;
   }));
+  // Boutons "choisir dans le carnet" par lieu (filtré par type)
+  $$('[data-pickloc]', f).forEach(b => b.addEventListener('click', () => {
+    openLocPicker(b.dataset.pickloc, b.dataset.kind);
+  }));
+  // Boutons "enregistrer ce lieu au carnet"
+  $$('[data-savetoloc]', f).forEach(b => b.addEventListener('click', () => {
+    saveLocToCarnet(b.dataset.savetoloc, b.dataset.kind);
+  }));
+  $('#add-sched-row').addEventListener('click', () => {
+    editDraft.schedule = editDraft.schedule || [];
+    editDraft.schedule.push({ label: '', time: '' });
+    renderScheduleRows();
+  });
   $('#add-crew-row').addEventListener('click', () => {
     editDraft.crew.push({ id: uid(), role: '', name: '', phone: '', email: '', call: '', key: false });
     renderCrewRows();
@@ -792,20 +823,80 @@ function renderEditorForm() {
     renderSceneRows();
   });
   $('#pick-crew').addEventListener('click', () => openCrewPicker());
-  $('#pick-loc').addEventListener('click', () => openLocPicker());
+  // Créer un membre au carnet ET l'ajouter à la feuille en cours
+  $('#new-crew-carnet').addEventListener('click', () => {
+    editCrew(null, (saved) => {
+      editDraft.crew.push({ id: uid(), role: saved.role, name: saved.name, phone: saved.phone,
+        email: saved.email, diet: saved.diet || '', notes: saved.notes || '',
+        call: editDraft.dayStart || '', key: false });
+      renderCrewRows();
+    });
+  });
+}
+
+// Enregistre le lieu saisi dans la feuille vers le carnet Lieux (ou Production).
+async function saveLocToCarnet(key, kind) {
+  const l = editDraft[key];
+  if (!l || !l.name) { toast('Renseigne au moins le nom du lieu'); return; }
+  const mapUrl = (l.mapUrl || '').trim() || mapUrlFromAddress(l.address || '');
+  if (kind === 'prod') {
+    const obj = { id: uid(), name: l.name, address: l.address || '', mapUrl, phone: '', email: '' };
+    await persist('productions', obj); State.productions.push(obj);
+    toast('Production ajoutée au carnet');
+  } else {
+    const obj = { id: uid(), name: l.name, address: l.address || '', mapUrl, kind: kind || 'tournage' };
+    await persist('locations', obj); State.locations.push(obj);
+    toast('Lieu ajouté au carnet');
+  }
+}
+
+// Lignes d'horaires dynamiques (PAT, repas, etc.)
+function renderScheduleRows() {
+  const box = $('#schedule-rows');
+  if (!box) return;
+  editDraft.schedule = editDraft.schedule || [];
+  box.innerHTML = editDraft.schedule.map((row, i) => `
+    <div class="repeat-item" data-i="${i}">
+      <button class="del-row" data-del-sched="${i}">✕</button>
+      <div class="field-row">
+        <div class="field"><label>Intitulé</label><input data-sch="${i}.label" value="${esc(row.label)}" placeholder="PAT 1 / Repas / PAT 2…"></div>
+        <div class="field"><label>Horaire</label><input data-sch="${i}.time" value="${esc(row.time)}" placeholder="9h - 12h30"></div>
+      </div>
+    </div>`).join('');
+  $$('[data-sch]', box).forEach(el => {
+    const [i, sub] = el.dataset.sch.split('.');
+    el.addEventListener('input', () => { editDraft.schedule[i][sub] = el.value; });
+  });
+  $$('[data-del-sched]', box).forEach(b => b.addEventListener('click', () => {
+    editDraft.schedule.splice(Number(b.dataset.delSched), 1); renderScheduleRows();
+  }));
 }
 
 function roleOptions(sel) {
   const uniq = [...new Set(ROLES)];
-  return uniq.map(r => `<option ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('');
+  // si le poste enregistré n'est pas dans la liste standard, c'est un poste "Autre"
+  const isCustom = sel && !uniq.includes(sel);
+  return uniq.map(r => `<option ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('')
+    + `<option value="__autre__" ${isCustom ? 'selected' : ''}>Autre…</option>`;
 }
+// True si le poste est un poste personnalisé (hors liste standard)
+function isCustomRole(role) {
+  return role && ![...new Set(ROLES)].includes(role);
+}
+
 function renderCrewRows() {
   const box = $('#crew-rows');
-  box.innerHTML = editDraft.crew.map((m, i) => `
+  box.innerHTML = editDraft.crew.map((m, i) => {
+    const custom = isCustomRole(m.role);
+    return `
     <div class="repeat-item" data-i="${i}">
       <button class="del-row" data-del-crew="${i}">✕</button>
       <div class="field"><label>Poste</label>
-        <select data-cm="${i}.role"><option value=""></option>${roleOptions(m.role)}</select></div>
+        <select data-role-sel="${i}"><option value=""></option>${roleOptions(m.role)}</select></div>
+      <div class="field" data-role-custom="${i}" ${custom ? '' : 'hidden'}>
+        <label>Poste personnalisé</label>
+        <input data-role-input="${i}" value="${custom ? esc(m.role) : ''}" placeholder="Saisir le poste">
+      </div>
       <div class="field"><label>Nom</label><input data-cm="${i}.name" value="${esc(m.name)}"></div>
       <div class="field-row">
         <div class="field"><label>Téléphone</label><input data-cm="${i}.phone" value="${esc(m.phone)}"></div>
@@ -813,13 +904,33 @@ function renderCrewRows() {
       </div>
       <div class="field"><label>Email (pour l'envoi)</label><input data-cm="${i}.email" type="email" value="${esc(m.email)}"></div>
       <label style="font-size:.82rem;color:var(--text-dim)"><input type="checkbox" data-cm="${i}.key" ${m.key?'checked':''}> Contact clé (en-tête)</label>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  // champs simples
   $$('[data-cm]', box).forEach(el => {
     const [i, sub] = el.dataset.cm.split('.');
     const ev = el.type === 'checkbox' ? 'change' : 'input';
     el.addEventListener(ev, () => {
       editDraft.crew[i][sub] = el.type === 'checkbox' ? el.checked : el.value;
     });
+  });
+  // select de poste : gère "Autre…"
+  $$('[data-role-sel]', box).forEach(sel => {
+    const i = sel.dataset.roleSel;
+    sel.addEventListener('change', () => {
+      if (sel.value === '__autre__') {
+        $(`[data-role-custom="${i}"]`, box).hidden = false;
+        editDraft.crew[i].role = $(`[data-role-input="${i}"]`, box).value || '';
+        $(`[data-role-input="${i}"]`, box).focus();
+      } else {
+        $(`[data-role-custom="${i}"]`, box).hidden = true;
+        editDraft.crew[i].role = sel.value;
+      }
+    });
+  });
+  $$('[data-role-input]', box).forEach(inp => {
+    const i = inp.dataset.roleInput;
+    inp.addEventListener('input', () => { editDraft.crew[i].role = inp.value; });
   });
   $$('[data-del-crew]', box).forEach(b => b.addEventListener('click', () => {
     editDraft.crew.splice(Number(b.dataset.delCrew), 1); renderCrewRows();
@@ -859,6 +970,13 @@ function closeEditor() {
 async function saveEditor() {
   const s = editDraft; delete s._isNew;
   s.projectId = s.projectId || State.currentProjectId;
+  // Pour chaque lieu : si pas de lien Maps mais une adresse, on génère le lien.
+  for (const key of ['locTournage','locParking','locHopital','locPolice','locProd']) {
+    const l = s[key];
+    if (l && l.address && !((l.mapUrl || '').trim())) {
+      l.mapUrl = mapUrlFromAddress(l.address);
+    }
+  }
   await persist('sheets', s);
   const idx = State.sheets.findIndex(x => x.id === s.id);
   if (idx >= 0) State.sheets[idx] = s; else State.sheets.push(s);
@@ -870,29 +988,91 @@ async function saveEditor() {
 
 /* --- Pickers carnet --- */
 let pickerMode = null;
+let pickerLocTarget = null; // champ lieu visé (ex. 'locHopital')
+
+function updatePickCount() {
+  const n = $$('#picker-list input:checked').length;
+  const el = $('#pick-count');
+  if (el) el.textContent = n ? `${n} sélectionné${n > 1 ? 's' : ''}` : 'Aucun sélectionné';
+  const all = $('#pick-all');
+  if (all) {
+    const total = $$('#picker-list input[type="checkbox"]').length;
+    all.textContent = (n >= total && total > 0) ? 'Tout désélectionner' : 'Tout sélectionner';
+  }
+}
+
 function openCrewPicker() {
   pickerMode = 'crew';
-  $('#picker-title-h').textContent = 'Importer depuis le carnet (équipe)';
-  $('#picker-list').innerHTML = State.crew.length
-    ? State.crew.map(m => `<label class="pick-row">
+  $('#picker-title-h').textContent = 'Importer depuis le carnet';
+  if (!State.crew.length) {
+    $('#picker-list').innerHTML = '<p class="muted">Carnet vide. Ajoutez des membres dans l\'onglet Carnet.</p>';
+  } else {
+    $('#picker-list').innerHTML = `
+      <div class="pick-toolbar">
+        <button class="btn-ghost" id="pick-all">Tout sélectionner</button>
+        <span class="muted small" id="pick-count">Aucun sélectionné</span>
+      </div>` +
+      State.crew.map(m => `<label class="pick-row">
         <input type="checkbox" value="${m.id}">
-        <span class="pick-main"><b>${esc(m.name)}</b><span class="muted small">${esc(m.role||'')} · ${esc(m.phone||'')}</span></span>
-      </label>`).join('')
-    : '<p class="muted">Carnet vide. Ajoutez des membres dans l\'onglet Carnet.</p>';
+        <span class="pick-main"><b>${esc(m.name)}</b><span class="muted small">${esc(m.role||'')}${m.phone?' · '+esc(m.phone):''}</span></span>
+      </label>`).join('');
+    // ligne cliquable -> coche, et maj compteur
+    $$('#picker-list input[type="checkbox"]').forEach(c =>
+      c.addEventListener('change', updatePickCount));
+    const all = $('#pick-all');
+    all.addEventListener('click', () => {
+      const boxes = $$('#picker-list input[type="checkbox"]');
+      const check = boxes.some(b => !b.checked);
+      boxes.forEach(b => b.checked = check);
+      updatePickCount();
+    });
+    updatePickCount();
+  }
+  $('#picker-done').style.display = '';
   $('#picker-backdrop').hidden = false; $('#picker-modal').hidden = false;
 }
-function openLocPicker() {
+
+// Picker lieu : filtré par type. target = champ visé (ex. 'locHopital'), kind = type.
+function openLocPicker(target, kind) {
+  pickerLocTarget = target || 'locTournage';
+  // Cas spécial : la Production se choisit dans le carnet "productions"
+  if (kind === 'prod') {
+    pickerMode = 'prod';
+    $('#picker-title-h').textContent = 'Choisir une production';
+    const row = pr => `<label class="pick-row">
+        <input type="radio" name="locpick" value="${pr.id}">
+        <span class="pick-main"><b>${esc(pr.name)}</b><span class="muted small">${esc(pr.address||'')}</span></span>
+      </label>`;
+    $('#picker-list').innerHTML = State.productions.length
+      ? State.productions.map(row).join('')
+      : '<p class="muted">Aucune production dans le carnet. Ajoutez-en dans Carnet → Production.</p>';
+    $('#picker-done').style.display = '';
+    $('#picker-backdrop').hidden = false; $('#picker-modal').hidden = false;
+    return;
+  }
   pickerMode = 'loc';
-  $('#picker-title-h').textContent = 'Importer un lieu depuis le carnet';
-  $('#picker-list').innerHTML = State.locations.length
-    ? State.locations.map(l => `<label class="pick-row">
-        <input type="radio" name="locpick" value="${l.id}">
-        <span class="pick-main"><b>${esc(l.name)}</b><span class="muted small">${esc(l.kind||'')} · ${esc(l.address||'')}</span></span>
-      </label>`).join('')
-    : '<p class="muted">Aucun lieu enregistré.</p>';
+  const labels = { tournage:'lieu de tournage', parking:'parking', hopital:'hôpital', police:'police' };
+  $('#picker-title-h').textContent = `Choisir un ${labels[kind] || 'lieu'}`;
+  const matching = State.locations.filter(l => l.kind === kind);
+  const others = State.locations.filter(l => l.kind !== kind);
+  const row = l => `<label class="pick-row">
+      <input type="radio" name="locpick" value="${l.id}">
+      <span class="pick-main"><b>${esc(l.name)}</b><span class="muted small">${esc(l.kind||'')}${l.address?' · '+esc(l.address):''}</span></span>
+    </label>`;
+  let html = '';
+  if (matching.length) html += matching.map(row).join('');
+  else html += '<p class="muted small">Aucun lieu de ce type dans le carnet.</p>';
+  if (others.length) html += `<p class="muted small" style="margin-top:10px">Autres lieux :</p>` + others.map(row).join('');
+  if (!State.locations.length) html = '<p class="muted">Aucun lieu enregistré. Ajoutez-en dans le Carnet → Lieux.</p>';
+  $('#picker-list').innerHTML = html;
+  $('#picker-done').style.display = '';
   $('#picker-backdrop').hidden = false; $('#picker-modal').hidden = false;
 }
-function closePicker() { $('#picker-backdrop').hidden = true; $('#picker-modal').hidden = true; pickerMode = null; }
+
+function closePicker() {
+  $('#picker-backdrop').hidden = true; $('#picker-modal').hidden = true;
+  pickerMode = null; pickerLocTarget = null;
+}
 function applyPicker() {
   if (pickerMode === 'crew') {
     const ids = $$('#picker-list input:checked').map(i => i.value);
@@ -905,10 +1085,14 @@ function applyPicker() {
     const sel = $('#picker-list input:checked');
     if (sel) {
       const l = byId(State.locations, sel.value);
-      // mappe le "kind" du lieu vers le bon champ
-      const map = { tournage: 'locTournage', parking: 'locParking', hopital: 'locHopital', police: 'locPolice', prod: 'locProd' };
-      const key = map[l.kind] || 'locTournage';
-      editDraft[key] = { name: l.name, address: l.address, mapUrl: l.mapUrl };
+      editDraft[pickerLocTarget] = { name: l.name, address: l.address, mapUrl: l.mapUrl };
+      renderEditorForm();
+    }
+  } else if (pickerMode === 'prod') {
+    const sel = $('#picker-list input:checked');
+    if (sel) {
+      const pr = byId(State.productions, sel.value);
+      editDraft[pickerLocTarget] = { name: pr.name, address: pr.address, mapUrl: pr.mapUrl };
       renderEditorForm();
     }
   }
@@ -921,6 +1105,7 @@ function renderCarnet() {
   $$('#carnet-seg button').forEach(b => b.classList.toggle('active', b.dataset.tab === carnetTab));
   $('#carnet-crew').hidden = carnetTab !== 'crew';
   $('#carnet-locations').hidden = carnetTab !== 'locations';
+  $('#carnet-prod').hidden = carnetTab !== 'prod';
   // équipe
   $('#crew-empty').hidden = State.crew.length > 0;
   $('#crew-list').innerHTML = State.crew.map(m => `
@@ -942,6 +1127,17 @@ function renderCarnet() {
       </div>
       <div class="card-actions"><button data-edit-loc="${l.id}">✎</button><button data-del-loc="${l.id}">🗑</button></div>
     </div>`).join('');
+  // production
+  $('#prod-empty').hidden = State.productions.length > 0;
+  $('#prod-list').innerHTML = State.productions.map(pr => `
+    <div class="card" data-prid="${pr.id}">
+      <div class="card-main"><div class="card-title">${esc(pr.name)}</div>
+        ${pr.address?`<div class="card-sub">${esc(pr.address)}</div>`:''}
+        <div class="card-sub">${pr.phone?'📞 '+esc(pr.phone):''}${pr.email?(pr.phone?' · ':'')+'✉️ '+esc(pr.email):''}</div>
+        ${pr.mapUrl ? `<div class="card-sub"><a href="${esc(pr.mapUrl)}" target="_blank" rel="noopener" style="color:var(--accent)">📍 Ouvrir dans Maps</a></div>` : ''}
+      </div>
+      <div class="card-actions"><button data-edit-prod="${pr.id}">✎</button><button data-del-prod="${pr.id}">🗑</button></div>
+    </div>`).join('');
   $$('[data-edit-crew]').forEach(b => b.addEventListener('click', () => editCrew(byId(State.crew, b.dataset.editCrew))));
   $$('[data-del-crew]').forEach(b => b.addEventListener('click', async () => {
     await remove('crew', b.dataset.delCrew); State.crew = State.crew.filter(x => x.id !== b.dataset.delCrew); renderCarnet();
@@ -950,6 +1146,32 @@ function renderCarnet() {
   $$('[data-del-loc]').forEach(b => b.addEventListener('click', async () => {
     await remove('locations', b.dataset.delLoc); State.locations = State.locations.filter(x => x.id !== b.dataset.delLoc); renderCarnet();
   }));
+  $$('[data-edit-prod]').forEach(b => b.addEventListener('click', () => editProd(byId(State.productions, b.dataset.editProd))));
+  $$('[data-del-prod]').forEach(b => b.addEventListener('click', async () => {
+    await remove('productions', b.dataset.delProd); State.productions = State.productions.filter(x => x.id !== b.dataset.delProd); renderCarnet();
+  }));
+}
+
+function editProd(pr) {
+  const isNew = !pr;
+  pr = pr || { id: uid(), name: '', address: '', mapUrl: '', phone: '', email: '' };
+  openMini(isNew ? 'Nouvelle production' : 'Modifier', `
+    ${field('Nom de la production', 'name', pr.name)}
+    ${field('Adresse', 'address', pr.address, 'text', '')}
+    ${field('Téléphone', 'phone', pr.phone)}
+    ${field('Email', 'email', pr.email, 'email')}
+    <p class="muted small">Le lien Google Maps est généré automatiquement depuis l'adresse.</p>
+  `.replace(/data-k=/g, 'data-m='), async (form) => {
+    const get = k => { const el = $(`[data-m="${k}"]`, form); return el ? el.value : ''; };
+    const address = get('address');
+    const obj = { ...pr, name: get('name'), address, phone: get('phone'), email: get('email'),
+      mapUrl: address ? mapUrlFromAddress(address) : '' };
+    if (!obj.name) { toast('Nom requis'); return false; }
+    await persist('productions', obj);
+    const i = State.productions.findIndex(x => x.id === obj.id);
+    if (i >= 0) State.productions[i] = obj; else State.productions.push(obj);
+    renderCarnet(); return true;
+  });
 }
 
 /* --- Mini-modale (membre / lieu) --- */
@@ -962,11 +1184,17 @@ function openMini(title, bodyHtml, onSave) {
 }
 function closeMini() { $('#mini-backdrop').hidden = true; $('#mini-modal').hidden = true; miniSave = null; }
 
-function editCrew(m) {
+function editCrew(m, onSaved) {
   const isNew = !m;
   m = m || { id: uid(), role: '', name: '', phone: '', email: '', diet: '', notes: '' };
+  const custom = isCustomRole(m.role);
   openMini(isNew ? 'Nouveau membre' : 'Modifier', `
+    <button class="inline-add" id="mini-from-contacts">📱 Importer depuis mes contacts</button>
     <div class="field"><label>Poste</label><select data-m="role"><option value=""></option>${roleOptions(m.role)}</select></div>
+    <div class="field" id="mini-role-custom" ${custom ? '' : 'hidden'}>
+      <label>Poste personnalisé</label>
+      <input data-m="roleCustom" value="${custom ? esc(m.role) : ''}" placeholder="Saisir le poste">
+    </div>
     ${field('Nom', 'name', m.name)}
     ${field('Téléphone', 'phone', m.phone)}
     ${field('Email', 'email', m.email, 'email')}
@@ -974,13 +1202,49 @@ function editCrew(m) {
     ${field('Commentaire', 'notes', m.notes, 'textarea', 'Note libre sur ce membre')}
   `.replace(/data-k=/g, 'data-m='), async (form) => {
     const get = k => { const el = $(`[data-m="${k}"]`, form); return el ? el.value : ''; };
-    const obj = { ...m, role: get('role'), name: get('name'), phone: get('phone'), email: get('email'), diet: get('diet'), notes: get('notes') };
+    let role = get('role');
+    if (role === '__autre__') role = get('roleCustom');
+    const obj = { ...m, role, name: get('name'), phone: get('phone'), email: get('email'), diet: get('diet'), notes: get('notes') };
     if (!obj.name) { toast('Nom requis'); return false; }
     await persist('crew', obj);
     const i = State.crew.findIndex(x => x.id === obj.id);
     if (i >= 0) State.crew[i] = obj; else State.crew.push(obj);
-    renderCarnet(); return true;
+    renderCarnet();
+    if (typeof onSaved === 'function') onSaved(obj);
+    return true;
   });
+  // gestion "Autre…" dans la mini-modale
+  const sel = $('[data-m="role"]', $('#mini-form'));
+  if (sel) sel.addEventListener('change', () => {
+    $('#mini-role-custom').hidden = (sel.value !== '__autre__');
+  });
+  // bouton contacts
+  const cbtn = $('#mini-from-contacts');
+  if (cbtn) cbtn.addEventListener('click', importFromContacts);
+}
+
+// Import depuis le carnet de contacts du téléphone.
+// API Contact Picker : Android/Chrome uniquement. iOS Safari ne la supporte pas.
+async function importFromContacts() {
+  if (!('contacts' in navigator) || !navigator.contacts || !navigator.contacts.select) {
+    toast('Non disponible sur cet appareil (iPhone en web). Sera possible dans l\'app native.');
+    return;
+  }
+  try {
+    const props = ['name', 'tel', 'email'];
+    const contacts = await navigator.contacts.select(props, { multiple: false });
+    if (!contacts || !contacts.length) return;
+    const c = contacts[0];
+    const nameEl = $('[data-m="name"]', $('#mini-form'));
+    const telEl = $('[data-m="phone"]', $('#mini-form'));
+    const mailEl = $('[data-m="email"]', $('#mini-form'));
+    if (nameEl && c.name && c.name.length) nameEl.value = c.name[0];
+    if (telEl && c.tel && c.tel.length) telEl.value = c.tel[0];
+    if (mailEl && c.email && c.email.length) mailEl.value = c.email[0];
+    toast('Contact importé');
+  } catch (e) {
+    toast('Import annulé');
+  }
 }
 
 // Génère un lien Google Maps de recherche à partir d'une adresse (gratuit, sans clé API).
@@ -1040,25 +1304,93 @@ function renderProfile() {
 // Création/édition d'un projet via une vraie fenêtre (champs séparés)
 function newProject() { editProject(null); }
 
+let projDraft = null; // logos temporaires pendant l'édition du projet
 function editProject(p) {
   const isNew = !p;
-  p = p || { id: uid(), name: '', producers: State.settings.prodName || '', created: Date.now() };
+  p = p || { id: uid(), name: '', producers: '', logoLeft: '', logoRight: '', created: Date.now() };
+  projDraft = { logoLeft: p.logoLeft || '', logoRight: p.logoRight || '' };
   openMini(isNew ? 'Nouveau projet' : 'Modifier le projet', `
     <div class="field"><label>Nom du projet</label>
-      <input data-p="name" value="${esc(p.name)}" placeholder="ex. PUB Santé Mentale H2M"></div>
-    <div class="field"><label>Produit par</label>
-      <input data-p="producers" value="${esc(p.producers)}" placeholder="ex. H2M et RhinoProd"></div>
+      <input data-p="name" value="${esc(p.name)}" placeholder=""></div>
+    <div class="field"><label>Produit par (maison de production)</label>
+      <input data-p="producers" value="${esc(p.producers)}" placeholder=""></div>
+    <div class="form-section-title">Logos (facultatifs)</div>
+    <p class="muted small">Affichés en en-tête de chaque feuille du projet. Gauche et/ou droite.</p>
+    <div class="logo-pick" id="logo-left-wrap">${logoPickHtml('left', projDraft.logoLeft, 'Logo gauche')}</div>
+    <div class="logo-pick" id="logo-right-wrap">${logoPickHtml('right', projDraft.logoRight, 'Logo droit')}</div>
   `, async (form) => {
     const get = k => { const el = $(`[data-p="${k}"]`, form); return el ? el.value.trim() : ''; };
-    const obj = { ...p, name: get('name'), producers: get('producers') };
+    const obj = { ...p, name: get('name'), producers: get('producers'),
+      logoLeft: projDraft.logoLeft || '', logoRight: projDraft.logoRight || '' };
     if (!obj.name) { toast('Le nom du projet est requis'); return false; }
     await persist('projects', obj);
     const i = State.projects.findIndex(x => x.id === obj.id);
     if (i >= 0) State.projects[i] = obj; else State.projects.push(obj);
+    projDraft = null;
     if (isNew) { openProject(obj.id); toast('Projet créé'); }
     else { renderProjects(); toast('Projet modifié'); }
     return true;
   });
+  // câblage des boutons logo
+  bindLogoPick('left');
+  bindLogoPick('right');
+}
+
+function logoPickHtml(side, dataUrl, label) {
+  if (dataUrl) {
+    return `<div class="logo-row">
+        <img src="${dataUrl}" class="logo-thumb" alt="${label}">
+        <div class="logo-actions">
+          <button class="btn-ghost" data-logo-change="${side}">Changer</button>
+          <button class="btn-ghost" data-logo-del="${side}">Retirer</button>
+        </div>
+      </div>`;
+  }
+  return `<button class="inline-add" data-logo-change="${side}">🖼️ Importer ${label.toLowerCase()}</button>`;
+}
+function bindLogoPick(side) {
+  const wrap = $(`#logo-${side}-wrap`);
+  if (!wrap) return;
+  const change = wrap.querySelector(`[data-logo-change="${side}"]`);
+  const del = wrap.querySelector(`[data-logo-del="${side}"]`);
+  if (change) change.addEventListener('click', () => importLogo(side));
+  if (del) del.addEventListener('click', () => {
+    projDraft[side === 'left' ? 'logoLeft' : 'logoRight'] = '';
+    refreshLogoWrap(side);
+  });
+}
+function refreshLogoWrap(side) {
+  const wrap = $(`#logo-${side}-wrap`);
+  const url = projDraft[side === 'left' ? 'logoLeft' : 'logoRight'];
+  wrap.innerHTML = logoPickHtml(side, url, side === 'left' ? 'Logo gauche' : 'Logo droit');
+  bindLogoPick(side);
+}
+// Importe + redimensionne une image en dataURL compacte (max 320px, JPEG/PNG)
+function importLogo(side) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => {
+    const file = inp.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 320;
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { const r = Math.min(max / w, max / h); w = Math.round(w * r); h = Math.round(h * r); }
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        // PNG pour préserver la transparence des logos
+        const out = cv.toDataURL('image/png');
+        projDraft[side === 'left' ? 'logoLeft' : 'logoRight'] = out;
+        refreshLogoWrap(side);
+        toast('Logo importé');
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
 }
 
 // Nouvelle feuille dans le projet courant
@@ -1074,8 +1406,14 @@ function newSheet() {
     subject: p ? p.name : '', producers: p ? p.producers : State.settings.prodName,
     sheetNum: '', date: new Date().toISOString().slice(0, 10),
     dayNum: '', dayTotal: '', dayStart: '8h', dayEnd: '19h',
-    pat1: '', meal: '', pat2: '', sunRise: '', sunSet: '', weather: '',
-    note: '', episode: '',
+    // Horaires dynamiques : liste de {label, time}. Reprend ceux de la dernière feuille.
+    schedule: last?.schedule ? JSON.parse(JSON.stringify(last.schedule)) : [
+      { label: 'PAT 1', time: '' },
+      { label: 'Repas', time: '' },
+      { label: 'PAT 2', time: '' },
+    ],
+    sunRise: '', sunSet: '', weather: '',
+    note: '', footer: '',
     // réutilise les lieux/équipe de la dernière feuille du projet (gain de temps)
     locTournage: last?.locTournage, locParking: last?.locParking,
     locHopital: last?.locHopital, locPolice: last?.locPolice, locProd: last?.locProd,
@@ -1135,6 +1473,7 @@ function bind() {
   $$('#carnet-seg button').forEach(b => b.addEventListener('click', () => { carnetTab = b.dataset.tab; renderCarnet(); }));
   $('#add-crew-btn').addEventListener('click', () => editCrew(null));
   $('#add-loc-btn').addEventListener('click', () => editLoc(null));
+  $('#add-prod-btn').addEventListener('click', () => editProd(null));
 
   // Éditeur
   $('#edit-cancel').addEventListener('click', closeEditor);
@@ -1180,14 +1519,12 @@ function bind() {
     const v = prompt('Maison(s) de production par défaut :', State.settings.prodName);
     if (v != null) { State.settings.prodName = v; await Store.setKV('settings', State.settings); toast('Enregistré'); }
   });
-  $('#set-logo-left').addEventListener('click', () => pickLogo('logoLeft'));
-  $('#set-logo-right').addEventListener('click', () => pickLogo('logoRight'));
   $('#set-export').addEventListener('click', () => Export.toJSON());
   $('#set-import').addEventListener('click', importJSON);
   $('#set-cloud').addEventListener('click', cloudToggle);
   $('#set-wipe').addEventListener('click', async () => {
     if (!confirm('Tout effacer sur cet appareil ? (le cloud n\'est pas touché)')) return;
-    await Store.wipeAll(); State.projects = []; State.sheets = []; State.crew = []; State.locations = [];
+    await Store.wipeAll(); State.projects = []; State.sheets = []; State.crew = []; State.locations = []; State.productions = [];
     go('projects'); toast('Données effacées');
   });
 
@@ -1242,7 +1579,7 @@ function importJSON() {
     r.onload = async () => {
       try {
         const d = JSON.parse(r.result);
-        for (const name of ['projects','sheets','crew','locations']) {
+        for (const name of ['projects','sheets','crew','locations','productions']) {
           if (Array.isArray(d[name])) for (const o of d[name]) { await Store[name].put(o); }
         }
         if (d.settings) { State.settings = { ...State.settings, ...d.settings }; await Store.setKV('settings', State.settings); }
@@ -1276,10 +1613,11 @@ function applyTheme() {
 }
 
 async function loadAll() {
-  State.projects  = await Store.projects.all();
-  State.sheets    = await Store.sheets.all();
-  State.crew      = await Store.crew.all();
-  State.locations = await Store.locations.all();
+  State.projects    = await Store.projects.all();
+  State.sheets      = await Store.sheets.all();
+  State.crew        = await Store.crew.all();
+  State.locations   = await Store.locations.all();
+  State.productions = await Store.productions.all();
   const st = await Store.getKV('settings'); if (st) State.settings = { ...State.settings, ...st };
 }
 

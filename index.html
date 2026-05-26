@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>FDS — Feuille de Service</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./style.css?v=5" />
+  <link rel="stylesheet" href="./style.css?v=7" />
 </head>
 <body>
   <!-- ====================== ÉCRAN DE CONNEXION ====================== -->
@@ -61,11 +61,12 @@
         </div>
       </section>
 
-      <!-- ---------- VUE : Carnet (équipe + lieux réutilisables) ---------- -->
+      <!-- ---------- VUE : Carnet (équipe + lieux + production) ---------- -->
       <section class="view" data-view="carnet" hidden>
         <div class="seg carnet-seg" id="carnet-seg">
           <button data-tab="crew" class="active">Équipe</button>
           <button data-tab="locations">Lieux</button>
+          <button data-tab="prod">Production</button>
         </div>
         <div id="carnet-crew" class="carnet-pane">
           <button class="btn-primary block" id="add-crew-btn">＋ Ajouter un membre</button>
@@ -79,6 +80,13 @@
           <div id="loc-list" class="cards"></div>
           <div id="loc-empty" class="empty-state small" hidden>
             <p class="muted">Aucun lieu enregistré. Ajoutez vos lieux récurrents (hôpital, police, prod, parkings types) pour les réutiliser.</p>
+          </div>
+        </div>
+        <div id="carnet-prod" class="carnet-pane" hidden>
+          <button class="btn-primary block" id="add-prod-btn">＋ Ajouter une production</button>
+          <div id="prod-list" class="cards"></div>
+          <div id="prod-empty" class="empty-state small" hidden>
+            <p class="muted">Aucune production enregistrée. Enregistrez les infos de vos maisons de production (nom, adresse, contact) pour les réutiliser sur chaque feuille.</p>
           </div>
         </div>
       </section>
@@ -106,12 +114,10 @@
 
           <div id="profile-stats" class="profile-stats"></div>
 
-          <h4 class="settings-head">Identité production</h4>
-          <p class="muted small">Pré-remplie sur chaque nouvelle feuille. Modifiable par feuille.</p>
+          <h4 class="settings-head">Valeurs par défaut</h4>
+          <p class="muted small">Les logos et la maison de production se définissent désormais par projet (à la création du projet).</p>
           <div class="settings-list">
-            <button class="settings-row" id="set-prod">Maison(s) de production…</button>
-            <button class="settings-row" id="set-logo-left">Logo gauche…</button>
-            <button class="settings-row" id="set-logo-right">Logo droit…</button>
+            <button class="settings-row" id="set-prod">Maison de production par défaut…</button>
           </div>
 
           <h4 class="settings-head">Données</h4>
@@ -191,6 +197,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="./app.js?v=5"></script>
+  <script src="./app.js?v=7"></script>
 </body>
 </html>
