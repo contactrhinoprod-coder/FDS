@@ -171,14 +171,13 @@ const Store = (() => {
    ============================================================ */
 /* ↓↓↓ REMPLACER PAR TES VALEURS FIREBASE ↓↓↓ */
 const FIREBASE_CONFIG = {
-  apiKey:            "TON_API_KEY",
-  authDomain:        "TON_PROJET.firebaseapp.com",
-  projectId:         "TON_PROJET",
-  storageBucket:     "TON_PROJET.firebasestorage.app",
-  messagingSenderId: "TON_SENDER_ID",
-  appId:             "TON_APP_ID",
+  apiKey:            "AIzaSyBgvEAvYzQchTmflKbAr3LXdGOBo-wwhYY",
+  authDomain:        "fdsaudiovisuelle.firebaseapp.com",
+  projectId:         "fdsaudiovisuelle",
+  storageBucket:     "fdsaudiovisuelle.firebasestorage.app",
+  messagingSenderId: "1017800979034",
+  appId:             "1:1017800979034:web:b00bb2a6b90a60ad0e1e63",
 };
-/* ↑↑↑ REMPLACER PAR TES VALEURS FIREBASE ↑↑↑ */
 
 const Cloud = (() => {
   let auth = null, db = null, user = null, ready = false;
@@ -201,12 +200,28 @@ const Cloud = (() => {
 
   async function signInGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithPopup(provider);
+    try {
+      await auth.signInWithPopup(provider);
+    } catch (e) {
+      // Sur iPhone/Brave la popup est souvent bloquée : on bascule en redirection.
+      if (isPopupProblem(e)) await auth.signInWithRedirect(provider);
+      else throw e;
+    }
   }
   async function signInApple() {
     const provider = new firebase.auth.OAuthProvider('apple.com');
     provider.addScope('email'); provider.addScope('name');
-    await auth.signInWithPopup(provider);
+    try {
+      await auth.signInWithPopup(provider);
+    } catch (e) {
+      if (isPopupProblem(e)) await auth.signInWithRedirect(provider);
+      else throw e;
+    }
+  }
+  function isPopupProblem(e) {
+    const c = e && e.code || '';
+    return c.includes('popup') || c.includes('cancelled') || c.includes('blocked')
+      || c === 'auth/operation-not-supported-in-this-environment';
   }
   async function signOut() { if (auth) await auth.signOut(); }
 
@@ -1962,6 +1977,8 @@ function bind() {
   // Login screen
   const gbtn = $('#login-google-btn');
   if (gbtn) gbtn.addEventListener('click', () => Cloud.signInGoogle().catch(showLoginErr));
+  const abtn = $('#login-apple-btn');
+  if (abtn) abtn.addEventListener('click', () => Cloud.signInApple().catch(showLoginErr));
   const skip = $('#login-skip-btn');
   if (skip) skip.addEventListener('click', () => {
     const ls = $('#login-screen'); if (ls) ls.hidden = true;
@@ -2098,13 +2115,20 @@ async function start() {
   }
 
   // Cloud : si configuré, on tente l'auth et on affiche l'écran de login.
-  // Sinon (cas actuel, FIREBASE_CONFIG non rempli) : l'app reste 100% locale,
-  // l'écran de login ne s'affiche jamais.
+  // Sinon (FIREBASE_CONFIG non rempli) : l'app reste 100% locale.
   if (Cloud.configured()) {
     Cloud.init(async (u) => {
       if (u) {
         if (loginScreen) loginScreen.hidden = true;
-        try { await Cloud.pullAll(); await loadAll(); go('projects'); } catch (e) {}
+        try {
+          // 1) on pousse d'abord les données locales vers le cloud (1ère connexion :
+          //    évite de perdre ce qui a été créé en local). 2) puis on tire le cloud.
+          await Cloud.pushAll();
+          await Cloud.pullAll();
+          await loadAll();
+          go('projects');
+          toast('Synchronisé');
+        } catch (e) { console.error('sync', e); }
       } else {
         if (loginScreen) loginScreen.hidden = false; // propose Google/Apple
       }

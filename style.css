@@ -77,6 +77,11 @@ input, select, textarea { font-family: inherit; }
   font-weight: 800; display: inline-flex; align-items: center; justify-content: center;
 }
 .login-error { color: var(--accent); font-size: .85rem; margin-top: 10px; }
+.login-apple {
+  width: 100%; padding: 13px; border-radius: 10px; border: 1px solid #000;
+  background: #000; color: #fff; font-size: 1rem; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px;
+}
 
 /* ---------------- Topbar ---------------- */
 #topbar {

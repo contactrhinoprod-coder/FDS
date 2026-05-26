@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>FDS — Feuille de Service</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./style.css?v=9" />
+  <link rel="stylesheet" href="./style.css?v=16" />
 </head>
 <body>
   <!-- ====================== ÉCRAN DE CONNEXION ====================== -->
@@ -19,6 +19,9 @@
       <p class="login-sub">Connectez-vous pour synchroniser vos feuilles de service sur tous vos appareils. Sans connexion, l'app fonctionne en local.</p>
       <button id="login-google-btn" class="login-google">
         <span class="g-icon">G</span> Se connecter avec Google
+      </button>
+      <button id="login-apple-btn" class="login-apple">
+         Se connecter avec Apple
       </button>
       <button id="login-skip-btn" class="btn-ghost">Continuer sans compte</button>
       <p id="login-error" class="login-error" hidden></p>
@@ -95,7 +98,7 @@
       <section class="view" data-view="preview" hidden>
         <div id="preview-actions" class="preview-actions">
           <button class="btn-ghost" id="preview-edit">Modifier</button>
-          <button class="btn-primary" id="preview-pdf">Exporter PDF</button>
+          <button class="btn-primary" id="preview-pdf">Exporter</button>
           <button class="btn-ghost" id="preview-dup">Dupliquer</button>
         </div>
         <div id="preview-content"><!-- la feuille rendue est injectée ici --></div>
@@ -118,6 +121,7 @@
           <p class="muted small">Les logos et la maison de production se définissent désormais par projet (à la création du projet).</p>
           <div class="settings-list">
             <button class="settings-row" id="set-prod">Maison de production par défaut…</button>
+            <button class="settings-row" id="set-template">Modèle de message (mail / partage)…</button>
           </div>
 
           <h4 class="settings-head">Données</h4>
@@ -197,6 +201,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="./app.js?v=9"></script>
+  <script src="./app.js?v=16"></script>
 </body>
 </html>
