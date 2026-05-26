@@ -371,7 +371,8 @@ const FdsRender = (() => {
 
   function logoCell(src, side) {
     if (src) return `<td class="fds-logo-cell"><img src="${src}" alt="logo"></td>`;
-    return `<td class="fds-logo-cell"><div class="fds-logo-ph">LOGO ${side}</div></td>`;
+    // Pas de logo : cellule vide (pas de texte "LOGO ...") sur la feuille générée
+    return `<td class="fds-logo-cell"></td>`;
   }
 
   function header(s, p) {
@@ -419,7 +420,8 @@ const FdsRender = (() => {
         extra = `<td class="eph" colspan="1" rowspan="${Math.max(1, rows.length - 2)}"></td>`;
       }
       const contactCell = i === 0 ? `<td rowspan="${rows.length}" style="font-size:9px">${keyContacts(s)}</td>` : '';
-      return `<tr>${contactCell}<td>${esc(row.label)}</td><td style="text-align:center">${esc(row.time)}</td>${extra}</tr>`;
+      const lbl = row.note ? `${esc(row.label)} <span style="font-weight:400;font-style:italic">— ${esc(row.note)}</span>` : esc(row.label);
+      return `<tr>${contactCell}<td>${lbl}</td><td style="text-align:center">${esc(row.time)}</td>${extra}</tr>`;
     }).join('');
 
     return `
@@ -466,19 +468,33 @@ const FdsRender = (() => {
     <table><tr><td class="fds-note" style="font-style:normal">${esc(parts.join(' · '))}</td></tr></table>`;
   }
 
-  function locRow(label, l) {
-    if (!l || (!l.name && !l.address)) return '';
-    return `
-      <td class="lh">${esc(label)}</td>
-      <td>${esc(l.name || '')}${l.address ? '<br>' + esc(l.address) : ''}${l.mapUrl ? '<br><a href="' + esc(l.mapUrl) + '">' + esc(l.mapUrl) + '</a>' : ''}</td>`;
+  // Normalise un champ lieu en tableau (rétro-compat : objet unique -> [objet])
+  function asLocArray(v) {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.filter(x => x && (x.name || x.address));
+    return (v.name || v.address) ? [v] : [];
+  }
+  function locCellContent(arr) {
+    if (!arr.length) return '';
+    return arr.map(l =>
+      `${esc(l.name || '')}${l.address ? '<br>' + esc(l.address) : ''}${l.mapUrl ? '<br><a href="' + esc(l.mapUrl) + '">' + esc(l.mapUrl) + '</a>' : ''}`
+    ).join('<hr style="border:none;border-top:1px dashed #999;margin:3px 0">');
+  }
+  function locRowPair(label1, arr1, label2, arr2) {
+    if (!arr1.length && !arr2.length) return '';
+    return `<tr>
+      <td class="lh">${esc(label1)}</td><td>${locCellContent(arr1)}</td>
+      ${label2 !== null ? `<td class="lh">${esc(label2)}</td><td>${locCellContent(arr2)}</td>` : '<td class="lh"></td><td></td>'}
+    </tr>`;
   }
 
   function locations(s) {
-    const T = s.locTournage, P = s.locParking, H = s.locHopital, Po = s.locPolice, Pr = s.locProd;
+    const T = asLocArray(s.locTournage), P = asLocArray(s.locParking),
+          H = asLocArray(s.locHopital), Po = asLocArray(s.locPolice), Pr = asLocArray(s.locProd);
     let rows = '';
-    if (T || P) rows += `<tr>${locRow('Lieu de tournage', T)}${locRow('Parking', P)}</tr>`;
-    if (H || Po) rows += `<tr>${locRow('Hôpital le + proche', H)}${locRow('Police la + proche', Po)}</tr>`;
-    if (Pr) rows += `<tr>${locRow('Production', Pr)}<td class="lh"></td><td></td></tr>`;
+    rows += locRowPair('Lieu de tournage', T, 'Parking', P);
+    rows += locRowPair('Hôpital le + proche', H, 'Police la + proche', Po);
+    if (Pr.length) rows += locRowPair('Production', Pr, null, []);
     if (!rows) return '';
     return `
     <div class="fds-sectionbar">Lieux</div>
@@ -666,18 +682,21 @@ function renderSheets() {
   $('#sheets-empty').hidden = list.length > 0;
   if (!list.length) { box.innerHTML = ''; return; }
   box.innerHTML = list.map(s => `
-    <div class="card" data-sid="${s.id}">
+    <div class="card ${s.draft ? 'is-draft' : ''}" data-sid="${s.id}">
       <div class="card-main">
         <div class="card-title">${esc(s.subject || 'Sans titre')}${s.sheetNum ? ' · N°' + esc(s.sheetNum) : ''}</div>
         <div class="card-sub">${esc(fmtDateLong(s.date))}${s.dayNum ? ' — Jour ' + esc(s.dayNum) + '/' + esc(s.dayTotal || '') : ''}</div>
       </div>
-      <span class="card-badge ${(s.crew||[]).length ? '' : 'muted'}">${(s.crew||[]).length} pers.</span>
+      ${s.draft ? '<span class="card-badge draft">brouillon</span>' : `<span class="card-badge ${(s.crew||[]).length ? '' : 'muted'}">${(s.crew||[]).length} pers.</span>`}
       <div class="card-actions"><button data-del-sheet="${s.id}">🗑</button></div>
     </div>`).join('');
   $$('.card[data-sid]', box).forEach(c => {
     c.addEventListener('click', e => {
       if (e.target.closest('[data-del-sheet]')) return;
-      openSheet(c.dataset.sid);
+      const s = byId(State.sheets, c.dataset.sid);
+      // un brouillon s'ouvre directement en édition pour le finir
+      if (s && s.draft) { State.currentSheetId = s.id; openEditor(s); }
+      else openSheet(c.dataset.sid);
     });
   });
   $$('[data-del-sheet]', box).forEach(b => b.addEventListener('click', async () => {
@@ -712,27 +731,122 @@ function field(label, key, val, type = 'text', ph = '') {
 }
 // Chaque lieu : nom + adresse (génère le lien Maps auto) + bouton "depuis le carnet"
 // filtré par type. `kind` = type pour filtrer le carnet.
-function locFields(label, key, l, kind) {
-  l = l || {};
+// Titres affichés par type de lieu
+const LOC_LABELS = {
+  locTournage: 'Lieu de tournage', locParking: 'Parking',
+  locHopital: 'Hôpital le plus proche', locPolice: 'Police la plus proche',
+  locProd: 'Production',
+};
+// Normalise un champ lieu en tableau dans editDraft (migration objet -> liste)
+function ensureLocArray(key) {
+  let v = editDraft[key];
+  if (!Array.isArray(v)) v = (v && (v.name || v.address)) ? [v] : [];
+  editDraft[key] = v;
+  return v;
+}
+function renderAllLocTypes() {
+  for (const key of ['locTournage','locParking','locHopital','locPolice','locProd']) {
+    renderLocType(key);
+  }
+}
+function renderLocType(key) {
+  const wrap = $(`[data-loctype="${key}"]`);
+  if (!wrap) return;
+  const kind = wrap.dataset.kind;
+  const arr = ensureLocArray(key);
   const carnetLabel = kind === 'prod' ? 'Choisir une production du carnet' : 'Choisir dans le carnet';
-  return `<div class="repeat-item">
-    <div class="form-section-title" style="margin-top:0">${label}</div>
-    <button class="inline-add" data-pickloc="${key}" data-kind="${kind}" style="margin-bottom:6px">📇 ${carnetLabel}</button>
-    <button class="inline-add" data-savetoloc="${key}" data-kind="${kind}" style="margin-bottom:8px">➕ Enregistrer ce lieu au carnet</button>
-    <div class="field"><label>Nom du lieu</label><input data-loc="${key}.name" value="${esc(l.name)}"></div>
-    <div class="field"><label>Adresse (le lien Maps est généré automatiquement)</label><input data-loc="${key}.address" value="${esc(l.address)}"></div>
-    <div class="field"><label>Lien Google Maps (facultatif)</label><input data-loc="${key}.mapUrl" value="${esc(l.mapUrl)}" placeholder="vide = généré depuis l adresse"></div>
-  </div>`;
+  const multi = (key !== 'locProd'); // la production reste unique
+  let html = `<div class="form-section-title" style="margin-top:8px">${LOC_LABELS[key]}</div>`;
+  if (!arr.length) {
+    html += `<p class="muted small">Aucun ${LOC_LABELS[key].toLowerCase()} pour l'instant.</p>`;
+  }
+  arr.forEach((l, idx) => {
+    html += `<div class="repeat-item">
+      ${arr.length > 1 || multi ? `<button class="del-row" data-loc-del="${key}.${idx}">✕</button>` : ''}
+      <button class="inline-add" data-loc-pick="${key}.${idx}" data-kind="${kind}" style="margin-bottom:6px">📇 ${carnetLabel}</button>
+      <button class="inline-add" data-loc-save="${key}.${idx}" data-kind="${kind}" style="margin-bottom:8px">➕ Enregistrer au carnet</button>
+      <div class="field"><label>Nom du lieu</label><input data-locf="${key}.${idx}.name" value="${esc(l.name)}"></div>
+      <div class="field"><label>Adresse (lien Maps auto)</label><input data-locf="${key}.${idx}.address" value="${esc(l.address)}"></div>
+      <div class="field"><label>Lien Maps (facultatif)</label><input data-locf="${key}.${idx}.mapUrl" value="${esc(l.mapUrl)}" placeholder="vide = généré depuis adresse"></div>
+    </div>`;
+  });
+  if (multi) html += `<button class="inline-add" data-loc-add="${key}" data-kind="${kind}">＋ Ajouter un ${LOC_LABELS[key].toLowerCase()}</button>`;
+  else if (!arr.length) html += `<button class="inline-add" data-loc-add="${key}" data-kind="${kind}">＋ Ajouter</button>`;
+  wrap.innerHTML = html;
+
+  // binds
+  $$('[data-locf]', wrap).forEach(el => el.addEventListener('input', () => {
+    const [k, idx, sub] = el.dataset.locf.split('.');
+    editDraft[k][idx][sub] = el.value;
+  }));
+  $$('[data-loc-del]', wrap).forEach(b => b.addEventListener('click', () => {
+    const [k, idx] = b.dataset.locDel.split('.');
+    editDraft[k].splice(Number(idx), 1); renderLocType(k); scheduleAutoSave();
+  }));
+  $$('[data-loc-add]', wrap).forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.locAdd;
+    ensureLocArray(k).push({ name: '', address: '', mapUrl: '' });
+    renderLocType(k); scheduleAutoSave();
+  }));
+  $$('[data-loc-pick]', wrap).forEach(b => b.addEventListener('click', () => {
+    const [k, idx] = b.dataset.locPick.split('.');
+    openLocPicker(k, b.dataset.kind, Number(idx));
+  }));
+  $$('[data-loc-save]', wrap).forEach(b => b.addEventListener('click', () => {
+    const [k, idx] = b.dataset.locSave.split('.');
+    saveLocToCarnet(k, b.dataset.kind, Number(idx));
+  }));
 }
 
 function openEditor(sheet) {
   editDraft = JSON.parse(JSON.stringify(sheet));
   editDraft.crew = editDraft.crew || [];
   editDraft.scenes = editDraft.scenes || [];
+  // Statut brouillon tant que non validé. Pour une feuille déjà existante
+  // qu'on ré-édite, on garde son statut actuel (draft éventuellement false).
+  if (editDraft._isNew) editDraft.draft = true;
+  editDraft.projectId = editDraft.projectId || State.currentProjectId;
   $('#edit-title-h').textContent = sheet._isNew ? 'Nouvelle feuille' : 'Modifier la feuille';
   renderEditorForm();
   $('#edit-backdrop').hidden = false;
   $('#edit-modal').hidden = false;
+  // Persiste tout de suite (la feuille apparaît dans la liste en brouillon)
+  autoSaveDraft(true);
+}
+
+// Sauvegarde automatique du brouillon en cours dans IndexedDB.
+// silent=true => pas d'indicateur (ex. à l'ouverture).
+let autoSaveTimer = null;
+async function autoSaveDraft(silent) {
+  if (!editDraft) return;
+  const s = JSON.parse(JSON.stringify(editDraft));
+  delete s._isNew;
+  s.projectId = s.projectId || State.currentProjectId;
+  s.updatedAt = Date.now();
+  await Store.sheets.put(s);
+  const idx = State.sheets.findIndex(x => x.id === s.id);
+  if (idx >= 0) State.sheets[idx] = s; else State.sheets.push(s);
+  // mémorise l'id du brouillon en cours pour la reprise après coupure
+  await Store.setKV('activeDraftId', s.draft ? s.id : '');
+  if (!silent) showDraftSaved();
+}
+// déclenche une sauvegarde différée (anti-spam à chaque frappe)
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => autoSaveDraft(false), 600);
+}
+function showDraftSaved() {
+  let el = $('#draft-indicator');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'draft-indicator';
+    el.className = 'draft-indicator';
+    document.body.appendChild(el);
+  }
+  el.textContent = '✓ brouillon enregistré';
+  el.classList.add('show');
+  clearTimeout(showDraftSaved._t);
+  showDraftSaved._t = setTimeout(() => el.classList.remove('show'), 1500);
 }
 
 function renderEditorForm() {
@@ -758,6 +872,7 @@ function renderEditorForm() {
     <button class="inline-add" id="add-sched-row">＋ Ajouter un PAT / repas</button>
 
     <div class="form-section-title">Éphémérides & météo</div>
+    <button class="inline-add" id="autofill-weather" style="margin-bottom:8px">🌤️ Remplir auto (soleil + météo selon le lieu de tournage et la date)</button>
     <div class="field-row">
       ${field('Lever soleil', 'sunRise', s.sunRise, 'text', '7h28')}
       ${field('Coucher soleil', 'sunSet', s.sunSet, 'text', '20h21')}
@@ -768,11 +883,11 @@ function renderEditorForm() {
     ${field('Note', 'note', s.note, 'textarea', '')}
 
     <div class="form-section-title">Lieux</div>
-    ${locFields('Lieu de tournage', 'locTournage', s.locTournage, 'tournage')}
-    ${locFields('Parking', 'locParking', s.locParking, 'parking')}
-    ${locFields('Hôpital le plus proche', 'locHopital', s.locHopital, 'hopital')}
-    ${locFields('Police la plus proche', 'locPolice', s.locPolice, 'police')}
-    ${locFields('Production', 'locProd', s.locProd, 'prod')}
+    <div id="loc-tournage" data-loctype="locTournage" data-kind="tournage"></div>
+    <div id="loc-parking" data-loctype="locParking" data-kind="parking"></div>
+    <div id="loc-hopital" data-loctype="locHopital" data-kind="hopital"></div>
+    <div id="loc-police" data-loctype="locPolice" data-kind="police"></div>
+    <div id="loc-prod" data-loctype="locProd" data-kind="prod"></div>
 
     <div class="form-section-title">Convocations (équipe)</div>
     <div id="crew-rows"></div>
@@ -786,8 +901,13 @@ function renderEditorForm() {
     <button class="inline-add" id="add-scene-row">＋ Ajouter une scène</button>
   `;
   renderScheduleRows();
+  renderAllLocTypes();
   renderCrewRows();
   renderSceneRows();
+
+  // Sauvegarde auto : tout input/change dans l'éditeur déclenche une sauvegarde différée.
+  f.addEventListener('input', scheduleAutoSave);
+  f.addEventListener('change', scheduleAutoSave);
 
   // Bind champs simples
   $$('[data-k]', f).forEach(el => el.addEventListener('input', () => {
@@ -795,20 +915,8 @@ function renderEditorForm() {
     if (el.type === 'number') v = v === '' ? '' : Number(v);
     editDraft[el.dataset.k] = v;
   }));
-  // Bind champs lieux
-  $$('[data-loc]', f).forEach(el => el.addEventListener('input', () => {
-    const [key, sub] = el.dataset.loc.split('.');
-    editDraft[key] = editDraft[key] || {};
-    editDraft[key][sub] = el.value;
-  }));
-  // Boutons "choisir dans le carnet" par lieu (filtré par type)
-  $$('[data-pickloc]', f).forEach(b => b.addEventListener('click', () => {
-    openLocPicker(b.dataset.pickloc, b.dataset.kind);
-  }));
-  // Boutons "enregistrer ce lieu au carnet"
-  $$('[data-savetoloc]', f).forEach(b => b.addEventListener('click', () => {
-    saveLocToCarnet(b.dataset.savetoloc, b.dataset.kind);
-  }));
+  // Bouton "Remplir auto" éphémérides + météo
+  $('#autofill-weather').addEventListener('click', autofillWeather);
   $('#add-sched-row').addEventListener('click', () => {
     editDraft.schedule = editDraft.schedule || [];
     editDraft.schedule.push({ label: '', time: '' });
@@ -835,8 +943,9 @@ function renderEditorForm() {
 }
 
 // Enregistre le lieu saisi dans la feuille vers le carnet Lieux (ou Production).
-async function saveLocToCarnet(key, kind) {
-  const l = editDraft[key];
+async function saveLocToCarnet(key, kind, idx) {
+  const arr = ensureLocArray(key);
+  const l = arr[idx || 0];
   if (!l || !l.name) { toast('Renseigne au moins le nom du lieu'); return; }
   const mapUrl = (l.mapUrl || '').trim() || mapUrlFromAddress(l.address || '');
   if (kind === 'prod') {
@@ -862,6 +971,7 @@ function renderScheduleRows() {
         <div class="field"><label>Intitulé</label><input data-sch="${i}.label" value="${esc(row.label)}" placeholder="PAT 1 / Repas / PAT 2…"></div>
         <div class="field"><label>Horaire</label><input data-sch="${i}.time" value="${esc(row.time)}" placeholder="9h - 12h30"></div>
       </div>
+      <div class="field"><label>Commentaire (n° / nom de scène…)</label><input data-sch="${i}.note" value="${esc(row.note)}" placeholder="ex. Scène 4 - intérieur voiture"></div>
     </div>`).join('');
   $$('[data-sch]', box).forEach(el => {
     const [i, sub] = el.dataset.sch.split('.');
@@ -965,23 +1075,33 @@ function renderSceneRows() {
 }
 
 function closeEditor() {
+  clearTimeout(autoSaveTimer);
+  // On NE supprime PAS le brouillon : il reste dans la liste (statut brouillon)
+  // et pourra être repris. On ferme juste la fenêtre.
   $('#edit-backdrop').hidden = true; $('#edit-modal').hidden = true; editDraft = null;
+  if (State.view === 'sheets') renderSheets();
 }
 async function saveEditor() {
+  clearTimeout(autoSaveTimer);
   const s = editDraft; delete s._isNew;
   s.projectId = s.projectId || State.currentProjectId;
-  // Pour chaque lieu : si pas de lien Maps mais une adresse, on génère le lien.
+  s.draft = false; // validée -> ce n'est plus un brouillon
+  // Pour chaque lieu (liste) : si pas de lien Maps mais une adresse, générer le lien.
   for (const key of ['locTournage','locParking','locHopital','locPolice','locProd']) {
-    const l = s[key];
-    if (l && l.address && !((l.mapUrl || '').trim())) {
-      l.mapUrl = mapUrlFromAddress(l.address);
-    }
+    let arr = s[key];
+    if (!Array.isArray(arr)) arr = (arr && (arr.name || arr.address)) ? [arr] : [];
+    arr.forEach(l => {
+      if (l && l.address && !((l.mapUrl || '').trim())) l.mapUrl = mapUrlFromAddress(l.address);
+    });
+    s[key] = arr;
   }
   await persist('sheets', s);
   const idx = State.sheets.findIndex(x => x.id === s.id);
   if (idx >= 0) State.sheets[idx] = s; else State.sheets.push(s);
   State.currentSheetId = s.id;
-  closeEditor();
+  await Store.setKV('activeDraftId', ''); // plus de brouillon actif
+  editDraft = null;
+  $('#edit-backdrop').hidden = true; $('#edit-modal').hidden = true;
   go('preview');
   toast('Feuille enregistrée');
 }
@@ -1032,9 +1152,11 @@ function openCrewPicker() {
   $('#picker-backdrop').hidden = false; $('#picker-modal').hidden = false;
 }
 
-// Picker lieu : filtré par type. target = champ visé (ex. 'locHopital'), kind = type.
-function openLocPicker(target, kind) {
+// Picker lieu : target = champ (ex. 'locHopital'), kind = type, idx = index dans la liste.
+let pickerLocIdx = 0;
+function openLocPicker(target, kind, idx) {
   pickerLocTarget = target || 'locTournage';
+  pickerLocIdx = idx || 0;
   // Cas spécial : la Production se choisit dans le carnet "productions"
   if (kind === 'prod') {
     pickerMode = 'prod';
@@ -1081,19 +1203,15 @@ function applyPicker() {
       if (m) editDraft.crew.push({ id: uid(), role: m.role, name: m.name, phone: m.phone, email: m.email, diet: m.diet || '', notes: m.notes || '', call: editDraft.dayStart || '', key: false });
     }
     renderCrewRows();
-  } else if (pickerMode === 'loc') {
+  } else if (pickerMode === 'loc' || pickerMode === 'prod') {
     const sel = $('#picker-list input:checked');
     if (sel) {
-      const l = byId(State.locations, sel.value);
-      editDraft[pickerLocTarget] = { name: l.name, address: l.address, mapUrl: l.mapUrl };
-      renderEditorForm();
-    }
-  } else if (pickerMode === 'prod') {
-    const sel = $('#picker-list input:checked');
-    if (sel) {
-      const pr = byId(State.productions, sel.value);
-      editDraft[pickerLocTarget] = { name: pr.name, address: pr.address, mapUrl: pr.mapUrl };
-      renderEditorForm();
+      const src = pickerMode === 'prod'
+        ? byId(State.productions, sel.value) : byId(State.locations, sel.value);
+      const arr = ensureLocArray(pickerLocTarget);
+      arr[pickerLocIdx] = { name: src.name, address: src.address, mapUrl: src.mapUrl };
+      renderLocType(pickerLocTarget);
+      scheduleAutoSave();
     }
   }
   closePicker();
@@ -1251,6 +1369,72 @@ async function importFromContacts() {
 function mapUrlFromAddress(addr) {
   if (!addr || !addr.trim()) return '';
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr.trim());
+}
+
+// Remplissage auto éphémérides + météo via API gratuites (sans clé) :
+// 1) géocodage de l'adresse du 1er lieu de tournage (Nominatim / OpenStreetMap)
+// 2) lever/coucher du soleil (Open-Meteo daily)
+// 3) météo prévue à la date (Open-Meteo)
+async function autofillWeather() {
+  const btn = $('#autofill-weather');
+  const arr = ensureLocArray('locTournage');
+  const addr = (arr[0] && arr[0].address || '').trim();
+  if (!addr) { toast('Renseigne d\'abord l\'adresse du lieu de tournage'); return; }
+  const date = editDraft.date;
+  if (!date) { toast('Renseigne d\'abord la date'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Récupération en cours…'; }
+  try {
+    // 1) géocodage
+    const geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(addr);
+    const geoRes = await fetch(geoUrl, { headers: { 'Accept': 'application/json' } });
+    const geo = await geoRes.json();
+    if (!geo || !geo.length) { toast('Adresse introuvable. Vérifie l\'adresse du lieu de tournage.'); return; }
+    const lat = parseFloat(geo[0].lat), lon = parseFloat(geo[0].lon);
+
+    // 2+3) Open-Meteo : soleil + météo du jour, fuseau auto
+    const wUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+      + `&daily=sunrise,sunset,temperature_2m_max,temperature_2m_min,weathercode`
+      + `&timezone=auto&start_date=${date}&end_date=${date}`;
+    const wRes = await fetch(wUrl);
+    const w = await wRes.json();
+    if (!w || !w.daily || !w.daily.time || !w.daily.time.length) {
+      toast('Météo indisponible pour cette date (trop loin ?). Soleil seul récupéré si possible.');
+    }
+    const d = w.daily;
+    const hhmm = iso => { const t = iso.split('T')[1] || ''; return t.slice(0,5).replace(':','h'); };
+    if (d && d.sunrise) editDraft.sunRise = hhmm(d.sunrise[0]);
+    if (d && d.sunset)  editDraft.sunSet  = hhmm(d.sunset[0]);
+    if (d && d.temperature_2m_max != null) {
+      const tmax = Math.round(d.temperature_2m_max[0]);
+      const tmin = Math.round(d.temperature_2m_min[0]);
+      const desc = weatherCodeToText(d.weathercode ? d.weathercode[0] : null);
+      editDraft.weather = `${tmax}° / ${tmin}°${desc ? ' ' + desc : ''}`;
+    }
+    // rafraîchit les champs concernés
+    const sr = $('[data-k="sunRise"]'); if (sr) sr.value = editDraft.sunRise || '';
+    const ss = $('[data-k="sunSet"]'); if (ss) ss.value = editDraft.sunSet || '';
+    const we = $('[data-k="weather"]'); if (we) we.value = editDraft.weather || '';
+    scheduleAutoSave();
+    toast('Éphémérides et météo remplies');
+  } catch (e) {
+    toast('Échec de la récupération (réseau ?). Tu peux remplir à la main.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🌤️ Remplir auto (soleil + météo selon le lieu de tournage et la date)'; }
+  }
+}
+// Traduit le code météo Open-Meteo (WMO) en court texte + emoji
+function weatherCodeToText(code) {
+  if (code == null) return '';
+  const m = {
+    0:'☀️ ciel clair', 1:'🌤️ peu nuageux', 2:'⛅ nuageux', 3:'☁️ couvert',
+    45:'🌫️ brouillard', 48:'🌫️ brouillard givrant',
+    51:'🌦️ bruine', 53:'🌦️ bruine', 55:'🌦️ bruine',
+    61:'🌧️ pluie', 63:'🌧️ pluie', 65:'🌧️ forte pluie',
+    71:'🌨️ neige', 73:'🌨️ neige', 75:'❄️ forte neige',
+    80:'🌦️ averses', 81:'🌧️ averses', 82:'⛈️ fortes averses',
+    95:'⛈️ orage', 96:'⛈️ orage grêle', 99:'⛈️ orage grêle',
+  };
+  return m[code] || '';
 }
 
 function editLoc(l) {
@@ -1414,13 +1598,21 @@ function newSheet() {
     ],
     sunRise: '', sunSet: '', weather: '',
     note: '', footer: '',
-    // réutilise les lieux/équipe de la dernière feuille du projet (gain de temps)
-    locTournage: last?.locTournage, locParking: last?.locParking,
-    locHopital: last?.locHopital, locPolice: last?.locPolice, locProd: last?.locProd,
+    // réutilise les lieux/équipe de la dernière feuille du projet (gain de temps).
+    // Les lieux sont des listes (copie profonde, normalisée).
+    locTournage: copyLocList(last?.locTournage), locParking: copyLocList(last?.locParking),
+    locHopital: copyLocList(last?.locHopital), locPolice: copyLocList(last?.locPolice),
+    locProd: copyLocList(last?.locProd),
     crew: last ? JSON.parse(JSON.stringify(last.crew || [])).map(m => ({ ...m, id: uid() })) : [],
     scenes: [],
   };
   openEditor(s);
+}
+// Normalise + copie une liste de lieux (objet unique ou tableau -> tableau)
+function copyLocList(v) {
+  let arr = v;
+  if (!Array.isArray(arr)) arr = (arr && (arr.name || arr.address)) ? [arr] : [];
+  return JSON.parse(JSON.stringify(arr));
 }
 
 // Menu mail nominatif : choisir le destinataire dans l'équipe
@@ -1447,6 +1639,13 @@ function openMailMenu() {
 }
 
 function bind() {
+  // Sécurité : sauvegarde immédiate du brouillon si l'app passe en arrière-plan
+  // (verrouillage écran, changement d'app, fermeture onglet).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && editDraft) autoSaveDraft(true);
+  });
+  window.addEventListener('pagehide', () => { if (editDraft) autoSaveDraft(true); });
+
   // Tabbar : Projet / Carnet / Profil
   $$('#tabbar .tab[data-go]').forEach(t => t.addEventListener('click', () => {
     go(t.dataset.go);
@@ -1638,6 +1837,27 @@ async function start() {
   try { bind(); } catch (e) { console.error('bind', e); }
 
   go('projects');
+
+  // Reprise de brouillon après coupure : si un brouillon était en cours, proposer de le reprendre.
+  try {
+    const draftId = await Store.getKV('activeDraftId');
+    if (draftId) {
+      const s = byId(State.sheets, draftId);
+      if (s && s.draft) {
+        setTimeout(() => {
+          if (confirm('Une feuille de service était en cours de création. Reprendre là où vous en étiez ?')) {
+            State.currentProjectId = s.projectId;
+            const pr = byId(State.projects, s.projectId);
+            State._projName = pr ? pr.name : 'Feuilles';
+            State.currentSheetId = s.id;
+            openEditor(s);
+          }
+        }, 400);
+      } else {
+        await Store.setKV('activeDraftId', '');
+      }
+    }
+  } catch (e) { /* pas bloquant */ }
 
   // Service worker
   if ('serviceWorker' in navigator) {
