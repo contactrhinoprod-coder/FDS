@@ -723,6 +723,8 @@ function renderPreview() {
 
 /* --- ÉDITEUR DE FEUILLE (modale complète) --- */
 let editDraft = null;
+// État de repli des sections lieux (hôpital/police repliés par défaut)
+let locCollapsed = { locHopital: true, locPolice: true };
 
 function field(label, key, val, type = 'text', ph = '') {
   if (type === 'textarea')
@@ -756,24 +758,46 @@ function renderLocType(key) {
   const arr = ensureLocArray(key);
   const carnetLabel = kind === 'prod' ? 'Choisir une production du carnet' : 'Choisir dans le carnet';
   const multi = (key !== 'locProd'); // la production reste unique
-  let html = `<div class="form-section-title" style="margin-top:8px">${LOC_LABELS[key]}</div>`;
-  if (!arr.length) {
-    html += `<p class="muted small">Aucun ${LOC_LABELS[key].toLowerCase()} pour l'instant.</p>`;
+  // Hôpital et police : sections repliables (repliées par défaut) pour aérer la page.
+  const collapsible = (key === 'locHopital' || key === 'locPolice');
+  const collapsed = collapsible ? (locCollapsed[key] !== false) : false; // replié par défaut
+
+  // En-tête : titre + (si repliable) bouton déplier/replier + résumé court
+  let summary = '';
+  if (collapsible && collapsed) {
+    const names = arr.map(l => l.name).filter(Boolean);
+    summary = names.length ? ` <span class="muted small">— ${esc(names.join(', '))}</span>` : ' <span class="muted small">— non renseigné</span>';
   }
-  arr.forEach((l, idx) => {
-    html += `<div class="repeat-item">
-      ${arr.length > 1 || multi ? `<button class="del-row" data-loc-del="${key}.${idx}">✕</button>` : ''}
-      <button class="inline-add" data-loc-pick="${key}.${idx}" data-kind="${kind}" style="margin-bottom:6px">📇 ${carnetLabel}</button>
-      <button class="inline-add" data-loc-save="${key}.${idx}" data-kind="${kind}" style="margin-bottom:8px">➕ Enregistrer au carnet</button>
-      <div class="field"><label>Nom du lieu</label><input data-locf="${key}.${idx}.name" value="${esc(l.name)}"></div>
-      <div class="field"><label>Adresse (lien Maps auto)</label><input data-locf="${key}.${idx}.address" value="${esc(l.address)}"></div>
-      <div class="field"><label>Lien Maps (facultatif)</label><input data-locf="${key}.${idx}.mapUrl" value="${esc(l.mapUrl)}" placeholder="vide = généré depuis adresse"></div>
+  let html = `<div class="loc-head">
+      <div class="form-section-title" style="margin:8px 0;flex:1">${LOC_LABELS[key]}${summary}</div>
+      ${collapsible ? `<button class="loc-toggle" data-loc-toggle="${key}">${collapsed ? '▼ Déplier' : '▲ Replier'}</button>` : ''}
     </div>`;
-  });
-  if (multi) html += `<button class="inline-add" data-loc-add="${key}" data-kind="${kind}">＋ Ajouter un ${LOC_LABELS[key].toLowerCase()}</button>`;
-  else if (!arr.length) html += `<button class="inline-add" data-loc-add="${key}" data-kind="${kind}">＋ Ajouter</button>`;
+
+  if (!collapsed) {
+    if (!arr.length) {
+      html += `<p class="muted small">Aucun ${LOC_LABELS[key].toLowerCase()} pour l'instant.</p>`;
+    }
+    arr.forEach((l, idx) => {
+      html += `<div class="repeat-item">
+        ${arr.length > 1 || multi ? `<button class="del-row" data-loc-del="${key}.${idx}">✕</button>` : ''}
+        <button class="inline-add" data-loc-pick="${key}.${idx}" data-kind="${kind}" style="margin-bottom:6px">📇 ${carnetLabel}</button>
+        <button class="inline-add" data-loc-save="${key}.${idx}" data-kind="${kind}" style="margin-bottom:8px">➕ Enregistrer au carnet</button>
+        <div class="field"><label>Nom du lieu</label><input data-locf="${key}.${idx}.name" value="${esc(l.name)}"></div>
+        <div class="field"><label>Adresse (lien Maps auto)</label><input data-locf="${key}.${idx}.address" value="${esc(l.address)}"></div>
+        <div class="field"><label>Lien Maps (facultatif)</label><input data-locf="${key}.${idx}.mapUrl" value="${esc(l.mapUrl)}" placeholder="vide = généré depuis adresse"></div>
+      </div>`;
+    });
+    if (multi) html += `<button class="inline-add" data-loc-add="${key}" data-kind="${kind}">＋ Ajouter un ${LOC_LABELS[key].toLowerCase()}</button>`;
+    else if (!arr.length) html += `<button class="inline-add" data-loc-add="${key}" data-kind="${kind}">＋ Ajouter</button>`;
+  }
   wrap.innerHTML = html;
 
+  // bouton déplier/replier
+  $$('[data-loc-toggle]', wrap).forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.locToggle;
+    locCollapsed[k] = (locCollapsed[k] === false); // bascule
+    renderLocType(k);
+  }));
   // binds
   $$('[data-locf]', wrap).forEach(el => el.addEventListener('input', () => {
     const [k, idx, sub] = el.dataset.locf.split('.');
@@ -1053,15 +1077,15 @@ function renderSceneRows() {
       <button class="del-row" data-del-scene="${i}">✕</button>
       <div class="field-row">
         ${field('Scène n°', '', x.num).replace('data-k=""', `data-sc="${i}.num"`)}
-        ${field('INT/EXT', '', x.intext).replace('data-k=""', `data-sc="${i}.intext"`)}
+        ${field('Plans', '', x.plans).replace('data-k=""', `data-sc="${i}.plans"`)}
       </div>
       <div class="field"><label>Description</label><textarea data-sc="${i}.desc">${esc(x.desc)}</textarea></div>
       <div class="field-row">
+        ${field('INT/EXT', '', x.intext).replace('data-k=""', `data-sc="${i}.intext"`)}
         ${field('Décor', '', x.decor).replace('data-k=""', `data-sc="${i}.decor"`)}
-        ${field('Personnages', '', x.perso).replace('data-k=""', `data-sc="${i}.perso"`)}
       </div>
       <div class="field-row">
-        ${field('Plans', '', x.plans).replace('data-k=""', `data-sc="${i}.plans"`)}
+        ${field('Personnages', '', x.perso).replace('data-k=""', `data-sc="${i}.perso"`)}
         ${field('Minutage', '', x.duration).replace('data-k=""', `data-sc="${i}.duration"`)}
       </div>
     </div>`).join('');

@@ -40,6 +40,12 @@
    Sans ça, les écrans/modales en display:flex ne se ferment jamais. */
 [hidden] { display: none !important; }
 
+/* Anti-défilement horizontal : rien ne doit dépasser la largeur de l'écran. */
+html, body { max-width: 100%; overflow-x: hidden; }
+#app, #views, .view, .modal, .modal-body, .sheet { max-width: 100%; overflow-x: hidden; }
+input, textarea, select { max-width: 100%; }
+img { max-width: 100%; }
+
 html, body {
   margin: 0; padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -236,7 +242,7 @@ input, select, textarea { font-family: inherit; }
 }
 .field textarea { min-height: 80px; resize: vertical; }
 .field-row { display: flex; gap: 10px; }
-.field-row .field { flex: 1; }
+.field-row .field { flex: 1; min-width: 0; }
 .form-section-title {
   font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent);
   margin: 22px 0 10px; font-weight: 800; border-bottom: 1px solid var(--border); padding-bottom: 6px;
@@ -386,3 +392,23 @@ input, select, textarea { font-family: inherit; }
 .logo-thumb { max-width: 90px; max-height: 54px; object-fit: contain; background: #fff; border-radius: 6px; padding: 4px; }
 .logo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .logo-actions .btn-ghost { padding: 7px 12px; font-size: .85rem; }
+
+/* Brouillon : badge + carte + indicateur de sauvegarde */
+.card-badge.draft { background: #b8860b; color: #fff; }
+.card.is-draft { border-left: 3px solid #b8860b; }
+.draft-indicator {
+  position: fixed; top: calc(var(--topbar-h) + var(--safe-top) + 8px); left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  background: #2e7d32; color: #fff; padding: 6px 14px; border-radius: 20px;
+  font-size: .82rem; z-index: 70; opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+.draft-indicator.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Sections lieux repliables (hôpital / police) */
+.loc-head { display: flex; align-items: center; gap: 10px; }
+.loc-toggle {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 8px; padding: 5px 10px; font-size: .78rem; font-weight: 600; white-space: nowrap;
+}
+.loc-toggle:active { background: var(--surface); }
